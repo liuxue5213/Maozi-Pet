@@ -14,7 +14,7 @@ import {
   Platform,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { useSocialStore, Friend, FriendPet } from '../../store/socialStore';
+import { useSocialStore, Friend, FriendPet } from '../../../store/socialStore';
 
 // ============================================================
 // 子组件

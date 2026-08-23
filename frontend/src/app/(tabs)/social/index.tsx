@@ -16,8 +16,8 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useSocialStore, Post } from '../../store/socialStore';
-import { usePetStore } from '../../store/petStore';
+import { useSocialStore, Post } from '../../../store/socialStore';
+import { usePetStore } from '../../../store/petStore';
 
 // ============================================================
 // 子组件

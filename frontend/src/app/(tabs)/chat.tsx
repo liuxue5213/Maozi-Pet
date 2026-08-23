@@ -13,7 +13,7 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
-import { usePetStore } from '../store/petStore';
+import { usePetStore } from '../../store/petStore';
 
 export default function ChatScreen() {
   const { pet, chatHistory, sendMessage } = usePetStore();

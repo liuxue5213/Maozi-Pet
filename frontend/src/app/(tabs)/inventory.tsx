@@ -15,8 +15,8 @@ import {
   FlatList,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { useInventoryStore, ItemDef, SceneDef } from '../store/inventoryStore';
-import { usePetStore } from '../store/petStore';
+import { useInventoryStore, ItemDef, SceneDef } from '../../store/inventoryStore';
+import { usePetStore } from '../../store/petStore';
 
 // ============================================================
 // 子组件

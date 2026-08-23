@@ -16,7 +16,7 @@ import {
   Modal,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { apiFetch } from '../config/env';
+import { apiFetch } from '../../config/env';
 
 const { width } = Dimensions.get('window');
 const ITEM_WIDTH = (width - 48) / 2;

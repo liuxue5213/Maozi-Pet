@@ -16,8 +16,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Link, useFocusEffect, useRouter } from 'expo-router';
-import { usePetStore, INTERACTION_LABELS } from '../store/petStore';
-import { clearToken } from '../config/env';
+import { usePetStore, INTERACTION_LABELS } from '../../store/petStore';
+import { clearToken } from '../../config/env';
 
 const { width } = Dimensions.get('window');
 
