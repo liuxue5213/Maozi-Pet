@@ -1,0 +1,80 @@
+# ============================================================
+# 帽子AI宠物 - CI 构建工作流
+# 触发条件: push / pull_request 到 main 分支
+# 安全说明: 所有密钥通过 GitHub Secrets 注入，绝不暴露于源码
+# ============================================================
+
+name: Build & Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # --- 后端构建与测试 ---
+  backend-build:
+    name: 🔧 后端构建
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 📦 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: 📥 安装依赖
+        run: npm ci
+
+      - name: ✅ 类型检查
+        run: npm run typecheck
+
+      - name: 🏗️ 构建
+        run: npm run build
+        env:
+          # 构建时注入（仅用于验证编译，不打包到产物）
+          BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          BAILIAN_BASE_URL: ${{ secrets.BAILIAN_BASE_URL }}
+          BAILIAN_MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-plus' }}
+          SERVER_PORT: '60235'
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+
+  # --- 前端构建与测试 ---
+  frontend-build:
+    name: 📱 前端构建
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 📦 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 📥 安装依赖
+        run: npm ci
+
+      - name: ✅ 类型检查
+        run: npm run typecheck
+
+      - name: 🏗️ 构建 Web 版本
+        run: npm run build:web
+        env:
+          # 构建时注入 API 地址
+          EXPO_PUBLIC_API_BASE_URL: ${{ secrets.PRODUCTION_API_URL }}

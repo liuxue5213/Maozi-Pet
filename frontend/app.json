@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "帽子AI宠物",
+    "slug": "maozi-pet",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "../assets/images/app-icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#FFF5F7"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.maozi.pet"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FFF5F7"
+      },
+      "package": "com.maozi.pet"
+    },
+    "web": {
+      "favicon": "../assets/images/app-icon.png",
+      "bundler": "metro"
+    },
+    "extra": {
+      "apiBaseUrl": "http://localhost:60235/api",
+      "router": {
+        "origin": false
+      }
+    }
+  }
+}

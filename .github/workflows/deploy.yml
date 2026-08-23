@@ -1,0 +1,175 @@
+# ============================================================
+# 帽子AI宠物 - CD 部署工作流
+# 触发条件: push 到 main 分支（后端构建成功后自动部署）
+# 部署目标: 120.48.13.152 (SSH)
+# 安全说明: 所有连接信息通过 GitHub Secrets 注入
+# ============================================================
+
+name: Deploy to Server
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # 也支持手动触发
+
+jobs:
+  deploy-backend:
+    name: 🚀 部署后端
+    runs-on: ubuntu-latest
+    needs: []  # 独立运行，不依赖 build job（build 在 PR 时跑）
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 📦 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: 📥 安装后端依赖
+        working-directory: backend
+        run: npm ci --production
+
+      - name: 🏗️ 构建后端
+        working-directory: backend
+        run: npm run build
+        env:
+          BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          BAILIAN_BASE_URL: ${{ secrets.BAILIAN_BASE_URL }}
+          BAILIAN_MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-plus' }}
+          SERVER_PORT: '60235'
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+
+      - name: 🚀 SSH 部署到服务器
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT || '22' }}
+          script: |
+            echo "🐱 开始部署 帽子AI宠物 后端..."
+
+            # 创建项目目录
+            mkdir -p /opt/maozi-pet/backend
+            cd /opt/maozi-pet/backend
+
+            # 备份当前版本（保留最近 3 个）
+            if [ -f package.json ]; then
+              BACKUP_DIR="backup_$(date +%Y%m%d_%H%M%S)"
+              mkdir -p /opt/maozi-pet/backups
+              cp -r dist package.json /opt/maozi-pet/backups/$BACKUP_DIR 2>/dev/null || true
+              cd /opt/maozi-pet/backups && ls -t | tail -n +4 | xargs rm -rf 2>/dev/null || true
+            fi
+
+            echo "✅ 后端部署准备完成"
+
+      - name: 📤 上传构建产物
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT || '22' }}
+          source: "backend/dist,backend/package.json,backend/package-lock.json"
+          target: "/opt/maozi-pet/backend/"
+          strip_components: 1
+
+      - name: 🔄 重启后端服务
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT || '22' }}
+          script: |
+            cd /opt/maozi-pet/backend
+
+            # 安装生产依赖
+            npm ci --production
+
+            # 写入环境变量文件（从 GitHub Secrets 注入）
+            cat > .env << 'ENVEOF'
+            NODE_ENV=production
+            SERVER_PORT=60235
+            BAILIAN_API_KEY=${{ secrets.BAILIAN_API_KEY }}
+            BAILIAN_BASE_URL=${{ secrets.BAILIAN_BASE_URL }}
+            BAILIAN_MODEL=${{ secrets.BAILIAN_MODEL || 'qwen-plus' }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            ENVEOF
+
+            # 使用 PM2 重启（如未安装则自动安装）
+            if ! command -v pm2 &> /dev/null; then
+              npm install -g pm2
+            fi
+
+            # 启动或重启
+            pm2 describe maozi-pet-backend > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+              pm2 restart maozi-pet-backend --update-env
+            else
+              pm2 start dist/index.js --name maozi-pet-backend
+            fi
+
+            # 保存 PM2 进程列表
+            pm2 save
+
+            echo "🎉 后端部署完成！"
+            pm2 status
+
+  # --- 前端 Web 部署（可选） ---
+  deploy-frontend-web:
+    name: 🌐 部署前端 Web
+    runs-on: ubuntu-latest
+    needs: []
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 📦 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 📥 安装前端依赖
+        working-directory: frontend
+        run: npm ci
+
+      - name: 🏗️ 构建 Web
+        working-directory: frontend
+        run: npm run build:web
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ secrets.PRODUCTION_API_URL }}
+
+      - name: 📤 上传 Web 构建产物
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT || '22' }}
+          source: "frontend/dist/*"
+          target: "/opt/maozi-pet/frontend/"
+          strip_components: 1
+
+      - name: 🔄 重启 Nginx
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT || '22' }}
+          script: |
+            # 重载 Nginx 配置
+            if command -v nginx &> /dev/null; then
+              nginx -s reload
+              echo "✅ Nginx 已重载"
+            else
+              echo "⚠️ Nginx 未安装，跳过"
+            fi
