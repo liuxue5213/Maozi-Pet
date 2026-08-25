@@ -265,6 +265,25 @@ db.exec(`
 
   -- 每日互动索引（放在表创建之后）
   CREATE INDEX IF NOT EXISTS idx_daily_interactions_user_date ON daily_interactions(user_id, interaction_date);
+
+  -- 每日 AI 调用计数（chat + event 统一防刷，与 petId 无关）
+  CREATE TABLE IF NOT EXISTS daily_chat (
+    user_id TEXT NOT NULL,
+    chat_date TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, chat_date)
+  );
+
+  -- 用户已购家园场景（防止切换场景重复扣费）
+  CREATE TABLE IF NOT EXISTS user_scene_owns (
+    user_id TEXT NOT NULL,
+    scene_id TEXT NOT NULL,
+    purchased_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (scene_id) REFERENCES home_scenes(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, scene_id)
+  );
 `);
 
 // ============================================================
@@ -343,12 +362,14 @@ ITEM_DEFS.forEach(item => {
 });
 
 // 家园场景插入（幂等）
+// 注意：is_default 列为 NOT NULL，必须显式传 0，
+// 否则 undefined 会被绑定为 NULL 并被 INSERT OR IGNORE 静默跳过
 const insertScene = db.prepare(`
   INSERT OR IGNORE INTO home_scenes (id, name, description, background_color, icon, price_coins, is_default)
   VALUES (?, ?, ?, ?, ?, ?, ?)
 `);
 HOME_SCENES.forEach(scene => {
-  insertScene.run(scene.id, scene.name, scene.description, scene.background_color, scene.icon, scene.price_coins, scene.is_default);
+  insertScene.run(scene.id, scene.name, scene.description, scene.background_color, scene.icon, scene.price_coins ?? 0, scene.is_default ?? 0);
 });
 
 export { ITEM_DEFS, HOME_SCENES };

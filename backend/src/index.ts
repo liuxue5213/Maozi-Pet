@@ -20,6 +20,12 @@ dotenv.config();
 const app = express();
 const PORT = parseInt(process.env.SERVER_PORT || '60235');
 
+// 反向代理（Nginx）背后必须信任 X-Forwarded-For，
+// 否则限流会把所有请求视为同一来源 IP，全站共享限额
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // ============================================================
 // 安全中间件
 // ============================================================
@@ -101,12 +107,14 @@ const server = app.listen(PORT, () => {
 });
 
 // Graceful Shutdown
-process.on('SIGTERM', () => {
-  console.log('🛑 收到 SIGTERM，优雅关闭中...');
+function shutdown(signal: string) {
+  console.log(`🛑 收到 ${signal}，优雅关闭中...`);
   server.close(() => {
     console.log('✅ 服务已停止');
     process.exit(0);
   });
-});
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 export default app;

@@ -7,18 +7,35 @@ import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import db from '../db';
-import { generateToken, authMiddleware, getCurrentUserId } from '../middleware/auth';
+import { generateToken, authMiddleware, getCurrentUserId, JWT_SECRET } from '../middleware/auth';
 
 export const authRouter = Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'maozi-pet-dev-secret-change-in-production';
-
 // ============================================================
-// 密码工具（轻量哈希，生产环境建议 bcrypt）
+// 密码工具（scrypt + 每用户随机盐；兼容旧 sha256 并在登录时自动升级）
 // ============================================================
 
 function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password + 'maozi-pet-salt').digest('hex');
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `scrypt$${salt}$${hash}`;
+}
+
+function timingSafeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
+}
+
+/** 校验密码；旧格式（sha256 固定盐）校验通过时标记需要重哈希 */
+function verifyPassword(password: string, stored: string): { ok: boolean; needsRehash: boolean } {
+  if (stored && stored.startsWith('scrypt$')) {
+    const [, salt, hash] = stored.split('$');
+    const candidate = crypto.scryptSync(password, salt, 64).toString('hex');
+    return { ok: timingSafeEqualHex(candidate, hash), needsRehash: false };
+  }
+  // 旧版存量格式
+  const legacy = crypto.createHash('sha256').update(password + 'maozi-pet-salt').digest('hex');
+  return { ok: legacy === stored, needsRehash: true };
 }
 
 function validateEmail(email: string): boolean {
@@ -29,12 +46,24 @@ function validatePassword(password: string): boolean {
   return password.length >= 6 && password.length <= 32;
 }
 
+function validateNickname(nickname: string): boolean {
+  return typeof nickname === 'string' && nickname.trim().length > 0 && nickname.trim().length <= 20;
+}
+
+function normalizeEmail(email: string): string {
+  return String(email || '').trim().toLowerCase();
+}
+
 // ============================================================
 // 游客快速开始
 // ============================================================
 
 authRouter.post('/guest', (req: Request, res: Response) => {
   const { nickname = '铲屎官' } = req.body;
+  if (!validateNickname(nickname)) {
+    res.status(400).json({ error: '昵称需要 1-20 个字符' });
+    return;
+  }
   const id = uuidv4();
   const now = new Date().toISOString();
 
@@ -61,7 +90,8 @@ authRouter.post('/guest', (req: Request, res: Response) => {
 // ============================================================
 
 authRouter.post('/register', (req: Request, res: Response) => {
-  const { email, password, nickname = '铲屎官' } = req.body;
+  const { password, nickname = '铲屎官' } = req.body;
+  const email = normalizeEmail(req.body.email);
 
   // 验证
   if (!email || !validateEmail(email)) {
@@ -70,6 +100,10 @@ authRouter.post('/register', (req: Request, res: Response) => {
   }
   if (!password || !validatePassword(password)) {
     res.status(400).json({ error: '密码需要 6-32 位字符' });
+    return;
+  }
+  if (!validateNickname(nickname)) {
+    res.status(400).json({ error: '昵称需要 1-20 个字符' });
     return;
   }
 
@@ -103,7 +137,8 @@ authRouter.post('/register', (req: Request, res: Response) => {
 // ============================================================
 
 authRouter.post('/login', (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  const email = normalizeEmail(req.body.email);
+  const { password } = req.body;
 
   if (!email || !password) {
     res.status(400).json({ error: '请输入邮箱和密码' });
@@ -116,9 +151,15 @@ authRouter.post('/login', (req: Request, res: Response) => {
     return;
   }
 
-  if (user.password_hash !== hashPassword(password)) {
+  const verify = verifyPassword(password, user.password_hash);
+  if (!verify.ok) {
     res.status(401).json({ error: '邮箱或密码错误' });
     return;
+  }
+
+  // 旧格式密码透明升级为 scrypt
+  if (verify.needsRehash) {
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), user.id);
   }
 
   // 更新登录时间
@@ -149,7 +190,8 @@ authRouter.post('/login', (req: Request, res: Response) => {
 // ============================================================
 
 authRouter.post('/upgrade', (req: Request, res: Response) => {
-  const { guestToken, email, password, nickname } = req.body;
+  const { guestToken, password, nickname } = req.body;
+  const email = normalizeEmail(req.body.email);
 
   if (!guestToken) {
     res.status(400).json({ error: '缺少游客凭证' });
@@ -161,6 +203,10 @@ authRouter.post('/upgrade', (req: Request, res: Response) => {
   }
   if (!password || !validatePassword(password)) {
     res.status(400).json({ error: '密码需要 6-32 位字符' });
+    return;
+  }
+  if (nickname !== undefined && !validateNickname(nickname)) {
+    res.status(400).json({ error: '昵称需要 1-20 个字符' });
     return;
   }
 
@@ -220,84 +266,75 @@ authRouter.post('/upgrade', (req: Request, res: Response) => {
 // 获取个人资料
 // ============================================================
 
-authRouter.get('/profile', (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: '未授权' });
+authRouter.get('/profile', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
+  if (!user) {
+    res.status(404).json({ error: '用户不存在' });
     return;
   }
 
-  try {
-    const payload = jwt.verify(authHeader.slice(7), JWT_SECRET) as any;
+  // 统计
+  const petCount = (db.prepare('SELECT COUNT(*) as cnt FROM pets WHERE user_id = ?').get(user.id) as any).cnt;
+  const friendCount = (db.prepare('SELECT COUNT(*) as cnt FROM friendships WHERE user_id = ?').get(user.id) as any).cnt;
+  const postCount = (db.prepare('SELECT COUNT(*) as cnt FROM posts WHERE user_id = ?').get(user.id) as any).cnt;
 
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.userId) as any;
-    if (!user) {
-      res.status(404).json({ error: '用户不存在' });
-      return;
-    }
-
-    // 统计
-    const petCount = (db.prepare('SELECT COUNT(*) as cnt FROM pets WHERE user_id = ?').get(user.id) as any).cnt;
-    const friendCount = (db.prepare('SELECT COUNT(*) as cnt FROM friendships WHERE user_id = ?').get(user.id) as any).cnt;
-    const postCount = (db.prepare('SELECT COUNT(*) as cnt FROM posts WHERE user_id = ?').get(user.id) as any).cnt;
-
-    res.json({
-      user: {
-        id: user.id,
-        type: user.type,
-        nickname: user.nickname,
-        email: user.email,
-        avatarEmoji: user.avatar_emoji,
-        bio: user.bio,
-        coins: user.coins,
-        diamonds: user.diamonds,
-        privacy: {
-          showOnSquare: !!user.privacy_show_on_square,
-          allowStrangerInteract: !!user.privacy_allow_stranger,
-          hidePetInfo: !!user.privacy_hide_pet_info,
-        },
-        createdAt: user.created_at,
-        lastLoginAt: user.last_login_at,
+  res.json({
+    user: {
+      id: user.id,
+      type: user.type,
+      nickname: user.nickname,
+      email: user.email,
+      avatarEmoji: user.avatar_emoji,
+      bio: user.bio,
+      coins: user.coins,
+      diamonds: user.diamonds,
+      privacy: {
+        showOnSquare: !!user.privacy_show_on_square,
+        allowStrangerInteract: !!user.privacy_allow_stranger,
+        hidePetInfo: !!user.privacy_hide_pet_info,
       },
-      stats: {
-        petCount,
-        friendCount,
-        postCount,
-        daysSinceSignup: Math.floor((Date.now() - new Date(user.created_at).getTime()) / (1000 * 60 * 60 * 24)),
-      },
-    });
-  } catch {
-    res.status(401).json({ error: 'Token 无效或已过期' });
-  }
+      createdAt: user.created_at,
+      lastLoginAt: user.last_login_at,
+    },
+    stats: {
+      petCount,
+      friendCount,
+      postCount,
+      daysSinceSignup: Math.floor((Date.now() - new Date(user.created_at).getTime()) / (1000 * 60 * 60 * 24)),
+    },
+  });
 });
 
 // ============================================================
 // 更新个人资料
 // ============================================================
 
-authRouter.put('/profile', (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: '未授权' });
-    return;
-  }
-
-  let userId: string;
-  try {
-    const payload = jwt.verify(authHeader.slice(7), JWT_SECRET) as any;
-    userId = payload.userId;
-  } catch {
-    res.status(401).json({ error: 'Token 无效' });
-    return;
-  }
-
+authRouter.put('/profile', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
   const { nickname, bio, avatarEmoji } = req.body;
+
+  // 字段长度校验（防止超长内容入库）
+  if (nickname !== undefined && !validateNickname(nickname)) {
+    res.status(400).json({ error: '昵称需要 1-20 个字符' });
+    return;
+  }
+  if (bio !== undefined && (typeof bio !== 'string' || bio.length > 100)) {
+    res.status(400).json({ error: '简介最多 100 字符' });
+    return;
+  }
+  if (avatarEmoji !== undefined && (typeof avatarEmoji !== 'string' || avatarEmoji.length > 8)) {
+    res.status(400).json({ error: '头像格式无效' });
+    return;
+  }
+
   const updates: string[] = [];
   const values: any[] = [];
 
   if (nickname !== undefined) {
     updates.push('nickname = ?');
-    values.push(nickname);
+    values.push(nickname.trim());
   }
   if (bio !== undefined) {
     updates.push('bio = ?');
@@ -333,6 +370,11 @@ authRouter.put('/profile', (req: Request, res: Response) => {
 authRouter.put('/privacy', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
   const { privacy } = req.body;
+
+  if (!privacy || typeof privacy !== 'object') {
+    res.status(400).json({ error: '缺少 privacy 参数' });
+    return;
+  }
 
   const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
   if (!existing) {

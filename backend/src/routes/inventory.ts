@@ -4,10 +4,13 @@
  * 家园系统：场景切换、布置、图鉴
  */
 import { Router, Request, Response } from 'express';
-import db from '../db';
+import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 
 export const inventoryRouter = Router();
+
+// 装备槽位白名单（与 item_defs.category 对应）
+const VALID_SLOTS = ['hat', 'clothing', 'accessory', 'effect', 'skin', 'frame', 'bubble'];
 
 // ============================================================
 // 装扮物品
@@ -19,11 +22,19 @@ inventoryRouter.get('/items', authMiddleware, (req: Request, res: Response) => {
 
   const items = db.prepare('SELECT * FROM item_defs ORDER BY category, price_coins').all() as any[];
 
+  // 一次性取出用户已拥有/已收集的物品集合（避免逐条查询）
+  const ownedSet = new Set(
+    (db.prepare('SELECT item_id FROM user_items WHERE user_id = ?').all(userId) as any[]).map(r => r.item_id)
+  );
+  const collectedSet = new Set(
+    (db.prepare('SELECT item_id FROM collection_records WHERE user_id = ?').all(userId) as any[]).map(r => r.item_id)
+  );
+
   // 标记用户是否已拥有
   const result = items.map(item => ({
     ...item,
-    owned: !!db.prepare('SELECT 1 FROM user_items WHERE user_id = ? AND item_id = ?').get(userId, item.id),
-    collected: !!db.prepare('SELECT 1 FROM collection_records WHERE user_id = ? AND item_id = ?').get(userId, item.id),
+    owned: ownedSet.has(item.id),
+    collected: collectedSet.has(item.id),
   }));
 
   res.json({
@@ -37,48 +48,8 @@ inventoryRouter.get('/items', authMiddleware, (req: Request, res: Response) => {
   });
 });
 
-// 购买物品
-inventoryRouter.post('/items/:itemId/buy', authMiddleware, (req: Request, res: Response) => {
-  const userId = getCurrentUserId(req);
-  const { itemId } = req.params;
-
-  const item = db.prepare('SELECT * FROM item_defs WHERE id = ?').get(itemId) as any;
-  if (!item) {
-    res.status(404).json({ error: '物品不存在' });
-    return;
-  }
-
-  const user = db.prepare('SELECT coins, diamonds FROM users WHERE id = ?').get(userId) as any;
-
-  // 检查货币
-  if (user.coins < item.price_coins) {
-    res.status(400).json({ error: '金币不足', needCoins: item.price_coins, haveCoins: user.coins });
-    return;
-  }
-
-  const existing = db.prepare('SELECT id FROM user_items WHERE user_id = ? AND item_id = ?').get(userId, itemId);
-
-  if (existing) {
-    // 已拥有，增加数量
-    db.prepare('UPDATE user_items SET quantity = quantity + 1 WHERE user_id = ? AND item_id = ?').run(userId, itemId);
-  } else {
-    // 新获得
-    db.prepare('INSERT INTO user_items (user_id, item_id, quantity, acquired_at) VALUES (?, ?, 1, ?)').run(userId, itemId, new Date().toISOString());
-    // 图鉴记录
-    db.prepare('INSERT OR IGNORE INTO collection_records (user_id, item_id, collected_at) VALUES (?, ?, ?)').run(userId, itemId, new Date().toISOString());
-  }
-
-  // 扣金币
-  db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(item.price_coins, userId);
-
-  const newBalance = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any).coins;
-
-  res.json({
-    message: `成功购买 ${item.name}！`,
-    item: { id: item.id, name: item.name, icon: item.icon },
-    coinsLeft: newBalance,
-  });
-});
+// 购买统一走 POST /api/shop/buy/:itemId（带事务的原子实现），
+// 此处不再提供重复的购买端点
 
 // 获取用户背包（已拥有物品）
 inventoryRouter.get('/backpack', authMiddleware, (req: Request, res: Response) => {
@@ -134,9 +105,16 @@ inventoryRouter.post('/pets/:petId/equip', authMiddleware, (req: Request, res: R
   const item = db.prepare('SELECT * FROM item_defs WHERE id = ?').get(itemId) as any;
   const equipSlot = slot || item.category; // 默认按品类对应槽位
 
-  // 同槽位替换
-  db.prepare('DELETE FROM pet_equips WHERE pet_id = ? AND slot = ?').run(petId, equipSlot);
-  db.prepare('INSERT INTO pet_equips (pet_id, slot, item_id, equipped_at) VALUES (?, ?, ?, ?)').run(petId, equipSlot, itemId, new Date().toISOString());
+  if (!VALID_SLOTS.includes(equipSlot)) {
+    res.status(400).json({ error: '无效的装备槽位' });
+    return;
+  }
+
+  // 同槽位替换（事务保证原子性）
+  transaction((tx) => {
+    tx.prepare('DELETE FROM pet_equips WHERE pet_id = ? AND slot = ?').run(petId, equipSlot);
+    tx.prepare('INSERT INTO pet_equips (pet_id, slot, item_id, equipped_at) VALUES (?, ?, ?, ?)').run(petId, equipSlot, itemId, new Date().toISOString());
+  });
 
   res.json({
     message: `装备 ${item.name} 成功！`,
@@ -218,7 +196,7 @@ inventoryRouter.get('/scenes', authMiddleware, (req: Request, res: Response) => 
   });
 });
 
-// 切换场景
+// 切换场景（付费场景只收一次钱，之后可自由切换）
 inventoryRouter.post('/home/scene', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
   const { sceneId } = req.body;
@@ -229,25 +207,42 @@ inventoryRouter.post('/home/scene', authMiddleware, (req: Request, res: Response
     return;
   }
 
-  // 付费场景检查金币
-  if (scene.price_coins > 0 && !scene.is_default) {
-    const user = db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any;
-    if (user.coins < scene.price_coins) {
+  // 事务：扣费 + 记录所有权 + 切换场景（原子操作）
+  const now = new Date().toISOString();
+  let charged = false;
+  try {
+    transaction((tx) => {
+      const owned = tx.prepare('SELECT 1 FROM user_scene_owns WHERE user_id = ? AND scene_id = ?').get(userId, sceneId);
+      const needPay = scene.price_coins > 0 && !scene.is_default && !owned;
+
+      if (needPay) {
+        // 条件更新兜底，防止并发扣成负数
+        const deduct = tx.prepare('UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?')
+          .run(scene.price_coins, userId, scene.price_coins);
+        if (deduct.changes === 0) {
+          throw new Error('INSUFFICIENT_COINS');
+        }
+        tx.prepare('INSERT OR IGNORE INTO user_scene_owns (user_id, scene_id, purchased_at) VALUES (?, ?, ?)').run(userId, sceneId, now);
+        charged = true;
+      }
+
+      const existing = tx.prepare('SELECT user_id FROM user_homes WHERE user_id = ?').get(userId);
+      if (existing) {
+        tx.prepare('UPDATE user_homes SET scene_id = ?, updated_at = ? WHERE user_id = ?').run(sceneId, now, userId);
+      } else {
+        tx.prepare('INSERT INTO user_homes (user_id, scene_id, furniture, updated_at) VALUES (?, ?, ?, ?)').run(userId, sceneId, '[]', now);
+      }
+    });
+  } catch (err: any) {
+    if (err.message === 'INSUFFICIENT_COINS') {
       res.status(400).json({ error: '金币不足', needCoins: scene.price_coins });
       return;
     }
-    db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(scene.price_coins, userId);
-  }
-
-  const existing = db.prepare('SELECT user_id FROM user_homes WHERE user_id = ?').get(userId);
-  if (existing) {
-    db.prepare('UPDATE user_homes SET scene_id = ?, updated_at = ? WHERE user_id = ?').run(sceneId, new Date().toISOString(), userId);
-  } else {
-    db.prepare('INSERT INTO user_homes (user_id, scene_id, furniture, updated_at) VALUES (?, ?, ?, ?)').run(userId, sceneId, '[]', new Date().toISOString());
+    throw err;
   }
 
   res.json({
-    message: `切换到 ${scene.name}！`,
+    message: charged ? `购买并切换到 ${scene.name}！` : `切换到 ${scene.name}！`,
     scene: { id: scene.id, name: scene.name, backgroundColor: scene.background_color, icon: scene.icon },
   });
 });

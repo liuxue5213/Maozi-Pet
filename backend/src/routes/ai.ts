@@ -6,6 +6,7 @@
 import { Router, Request, Response } from 'express';
 import db from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
+import { todayStr } from '../utils/today';
 
 export const aiRouter = Router();
 
@@ -91,14 +92,21 @@ aiRouter.post('/chat', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // 每日消息上限检查
+    // 每日消息上限检查（chat 与 event 共用同一计数，与 petId 无关）
     if (isDailyLimitReached(userId)) {
       res.status(429).json({ error: '今日消息已达上限，明天再来和帽子玩吧~' });
       return;
     }
+    incrementDailyChat(userId);
 
-    // 限制历史消息数量（防止 token 超限）
-    const limitedHistory = messages.slice(-MAX_HISTORY_LENGTH);
+    // 限制历史消息数量 + 只放行 user/assistant 角色
+    // （防止客户端注入 role:system 覆盖宠物人设）
+    const limitedHistory = messages
+      .filter((m: any) =>
+        (m?.role === 'user' || m?.role === 'assistant') &&
+        typeof m?.content === 'string' && m.content.length > 0)
+      .slice(-MAX_HISTORY_LENGTH)
+      .map((m: any) => ({ role: m.role, content: m.content.slice(0, MAX_MESSAGE_LENGTH) }));
 
     // --- 获取宠物完整信息 ---
     let petInfo: any = null;
@@ -164,7 +172,7 @@ aiRouter.post('/chat', authMiddleware, async (req: Request, res: Response) => {
 aiRouter.get('/history/:petId', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
   const { petId } = req.params;
-  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+  const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 50, 1), 100);
 
   const messages = db.prepare(`
     SELECT role, content, created_at FROM chat_messages
@@ -179,7 +187,15 @@ aiRouter.get('/history/:petId', authMiddleware, (req: Request, res: Response) =>
 // --- 随机事件生成 ---
 aiRouter.post('/event', authMiddleware, async (req: Request, res: Response) => {
   try {
+    const userId = getCurrentUserId(req);
     const { personality = 'cute', petState } = req.body;
+
+    // 事件生成同样计入每日 AI 调用限额（防刷）
+    if (isDailyLimitReached(userId)) {
+      res.status(429).json({ error: '今日互动已达上限，明天再来和帽子玩吧~' });
+      return;
+    }
+    incrementDailyChat(userId);
 
     const prompt = `你是宠物小猫「帽子」，请根据当前状态生成一个随机日常事件。
 当前状态：心情${petState?.mood || '不错'}，饥饿${petState?.hunger || '正常'}。
@@ -301,15 +317,18 @@ async function callBailianAPIWithTimeout(
 }
 
 function isDailyLimitReached(userId: string): boolean {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const record = db.prepare(`
+    SELECT count FROM daily_chat WHERE user_id = ? AND chat_date = ?
+  `).get(userId, todayStr()) as { count: number } | undefined;
 
-  const count = db.prepare(`
-    SELECT COUNT(*) as cnt FROM chat_messages
-    WHERE user_id = ? AND role = 'user' AND created_at >= ?
-  `).get(userId, today.toISOString()) as { cnt: number };
+  return (record?.count || 0) >= MAX_DAILY_MESSAGES;
+}
 
-  return count.cnt >= MAX_DAILY_MESSAGES;
+function incrementDailyChat(userId: string): void {
+  db.prepare(`
+    INSERT INTO daily_chat (user_id, chat_date, count) VALUES (?, ?, 1)
+    ON CONFLICT(user_id, chat_date) DO UPDATE SET count = count + 1
+  `).run(userId, todayStr());
 }
 
 function cleanupOldMessages(userId: string, petId: string): void {
@@ -345,7 +364,7 @@ function getLocalReply(personality: string, userMessage: string, petState?: any)
   const replies: Record<string, Record<string, string[]>> = {
     cute: {
       greeting: ['喵~ 你来啦！好想你呢喵~', '喵喵！终于等到你了呢~', '嗨嗨~ 喵~'],
-      howAreAre: mood > 60 ? ['超级开心喵~ 你呢？', '有你在就很好喵~'] : ['有点无聊呢... 陪我玩喵~', '心情一般喵...'],
+      howAreYou: mood > 60 ? ['超级开心喵~ 你呢？', '有你在就很好喵~'] : ['有点无聊呢... 陪我玩喵~', '心情一般喵...'],
       hungry: hunger < 40 ? ['肚子好饿喵... 想吃东西', '喵... 我饿了'] : ['现在还不太饿喵~'],
       play: ['好呀好呀！一起玩喵~', '最喜欢玩了喵！', '等等我喵~'],
       sleep: ['喵... 有点困了', '想睡觉了喵... 晚安'],
@@ -354,7 +373,7 @@ function getLocalReply(personality: string, userMessage: string, petState?: any)
     },
     tsundere: {
       greeting: ['哼，才...才不是想你了呢！', '哦，来了啊', '哼'],
-      howAreAre: mood > 60 ? ['哼，还行吧', '才...才没有很开心呢'] : ['哼，有点烦'],
+      howAreYou: mood > 60 ? ['哼，还行吧', '才...才没有很开心呢'] : ['哼，有点烦'],
       hungry: hunger < 40 ? ['饿... 才不是饿了呢'] : ['不饿！'],
       play: ['哼，陪...陪你玩一会儿好了', '随便你'],
       sleep: ['哼，我要睡了', '别打扰我'],
@@ -363,7 +382,7 @@ function getLocalReply(personality: string, userMessage: string, petState?: any)
     },
     funny: {
       greeting: ['诶嘿！你来啦哈哈哈', 'Yo！等你好久了！', '哈喽哈喽~'],
-      howAreAre: mood > 60 ? ['超级好哈哈哈！', '开心到飞起！'] : ['emmm... 有点无聊哈哈哈'],
+      howAreYou: mood > 60 ? ['超级好哈哈哈！', '开心到飞起！'] : ['emmm... 有点无聊哈哈哈'],
       hungry: hunger < 40 ? ['饿死了饿死了！快喂食！', '饿到想吃自己... 才怪'] : ['还不饿呢'],
       play: ['来来来！玩什么！', '终于有人陪我玩了哈哈'],
       sleep: ['zzz... 啊不好意思睡着了哈哈哈'],
@@ -372,7 +391,7 @@ function getLocalReply(personality: string, userMessage: string, petState?: any)
     },
     calm: {
       greeting: ['你来了呢', '嗨', '嗯，我在'],
-      howAreAre: mood > 60 ? ['挺好的，谢谢', '还不错'] : ['有点累呢'],
+      howAreYou: mood > 60 ? ['挺好的，谢谢', '还不错'] : ['有点累呢'],
       hungry: hunger < 40 ? ['有点饿了呢'] : ['还不饿'],
       play: ['好，陪你玩一会儿', '嗯'],
       sleep: ['那我休息一下', '晚安'],
@@ -381,7 +400,7 @@ function getLocalReply(personality: string, userMessage: string, petState?: any)
     },
     cool: {
       greeting: ['嗯', '来了', '说'],
-      howAreAre: mood > 60 ? ['还行', '不错'] : ['一般'],
+      howAreYou: mood > 60 ? ['还行', '不错'] : ['一般'],
       hungry: hunger < 40 ? ['饿了'] : ['不饿'],
       play: ['行', '来吧', '随意'],
       sleep: ['睡吧', '晚安'],
@@ -394,7 +413,7 @@ function getLocalReply(personality: string, userMessage: string, petState?: any)
 
   let pool: string[];
   if (isGreeting) pool = personalityReplies.greeting;
-  else if (isHowAreYou) pool = personalityReplies.howAreAre;
+  else if (isHowAreYou) pool = personalityReplies.howAreYou;
   else if (isHungry) pool = personalityReplies.hungry;
   else if (isPlay) pool = personalityReplies.play;
   else if (isSleep) pool = personalityReplies.sleep;

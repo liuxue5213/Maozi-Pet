@@ -44,14 +44,25 @@ interface CommentRow {
 // 社区广场 - 帖子
 // ============================================================
 
-// 获取帖子列表（广场动态流）
+// 解析帖子 ID（路由参数必须是正整数）
+function parsePostId(req: Request): number | null {
+  const id = parseInt(req.params.postId, 10);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+// LIKE 关键词转义（% _ \ 是通配符）
+function escapeLike(keyword: string): string {
+  return keyword.replace(/[\\%_]/g, ch => '\\' + ch);
+}
+
+// 获取帖子列表（广场动态流，尊重用户"广场展示"隐私设置）
 socialRouter.get('/posts', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
   const page = Math.max(parseInt(req.query.page as string) || 1, 1);
   const pageSize = Math.min(parseInt(req.query.pageSize as string) || 20, 50);
   const offset = (page - 1) * pageSize;
 
-  // 获取帖子 + 作者信息 + 宠物信息
+  // 获取帖子 + 作者信息 + 宠物信息（过滤掉关闭广场展示的用户）
   const posts = db.prepare(`
     SELECT p.*,
       u.nickname as author_nickname, u.type as author_type,
@@ -59,11 +70,20 @@ socialRouter.get('/posts', authMiddleware, (req: Request, res: Response) => {
     FROM posts p
     LEFT JOIN users u ON p.user_id = u.id
     LEFT JOIN pets pt ON p.pet_id = pt.id
+    WHERE COALESCE(u.privacy_show_on_square, 1) = 1
     ORDER BY p.created_at DESC
     LIMIT ? OFFSET ?
   `).all(pageSize, offset) as PostRow[];
 
-  // 标记当前用户是否已点赞
+  // 一次性查出当前用户已点赞的帖子（避免逐条查询）
+  const postIds = posts.map(p => p.id);
+  const likedSet = new Set<number>();
+  if (postIds.length > 0) {
+    const placeholders = postIds.map(() => '?').join(',');
+    (db.prepare(`SELECT post_id FROM post_likes WHERE user_id = ? AND post_id IN (${placeholders})`)
+      .all(userId, ...postIds) as any[]).forEach(r => likedSet.add(r.post_id));
+  }
+
   const result = posts.map(post => ({
     id: post.id,
     content: post.content,
@@ -82,10 +102,14 @@ socialRouter.get('/posts', authMiddleware, (req: Request, res: Response) => {
       stage: post.pet_stage,
       personality: post.pet_personality,
     } : null,
-    isLiked: !!db.prepare('SELECT 1 FROM post_likes WHERE post_id = ? AND user_id = ?').get(post.id, userId),
+    isLiked: likedSet.has(post.id),
   }));
 
-  const total = (db.prepare('SELECT COUNT(*) as cnt FROM posts').get() as any).cnt;
+  const total = (db.prepare(`
+    SELECT COUNT(*) as cnt FROM posts p
+    LEFT JOIN users u ON p.user_id = u.id
+    WHERE COALESCE(u.privacy_show_on_square, 1) = 1
+  `).get() as any).cnt;
 
   res.json({
     posts: result,
@@ -157,7 +181,11 @@ socialRouter.post('/posts', authMiddleware, (req: Request, res: Response) => {
 // 点赞/取消点赞
 socialRouter.post('/posts/:postId/like', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
-  const postId = parseInt(req.params.postId);
+  const postId = parsePostId(req);
+  if (postId === null) {
+    res.status(400).json({ error: '无效的帖子 ID' });
+    return;
+  }
 
   const post = db.prepare('SELECT id FROM posts WHERE id = ?').get(postId);
   if (!post) {
@@ -188,7 +216,11 @@ socialRouter.post('/posts/:postId/like', authMiddleware, (req: Request, res: Res
 
 // 获取评论列表
 socialRouter.get('/posts/:postId/comments', authMiddleware, (req: Request, res: Response) => {
-  const postId = parseInt(req.params.postId);
+  const postId = parsePostId(req);
+  if (postId === null) {
+    res.status(400).json({ error: '无效的帖子 ID' });
+    return;
+  }
   const limit = Math.min(parseInt(req.query.limit as string) || 30, 100);
 
   const comments = db.prepare(`
@@ -213,7 +245,11 @@ socialRouter.get('/posts/:postId/comments', authMiddleware, (req: Request, res: 
 // 发表评论
 socialRouter.post('/posts/:postId/comments', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
-  const postId = parseInt(req.params.postId);
+  const postId = parsePostId(req);
+  if (postId === null) {
+    res.status(400).json({ error: '无效的帖子 ID' });
+    return;
+  }
   const { content } = req.body;
 
   if (!content || typeof content !== 'string' || content.trim().length === 0) {
@@ -232,18 +268,22 @@ socialRouter.post('/posts/:postId/comments', authMiddleware, (req: Request, res:
   }
 
   const now = new Date().toISOString();
-  const result = db.prepare(`
-    INSERT INTO post_comments (post_id, user_id, content, created_at)
-    VALUES (?, ?, ?, ?)
-  `).run(postId, userId, content.trim(), now);
-
-  db.prepare('UPDATE posts SET comments_count = comments_count + 1 WHERE id = ?').run(postId);
+  let commentId: number | bigint;
+  // 事务：写评论 + 更新计数（原子操作）
+  transaction((tx) => {
+    const result = tx.prepare(`
+      INSERT INTO post_comments (post_id, user_id, content, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(postId, userId, content.trim(), now);
+    commentId = result.lastInsertRowid;
+    tx.prepare('UPDATE posts SET comments_count = comments_count + 1 WHERE id = ?').run(postId);
+  });
 
   const user = db.prepare('SELECT nickname FROM users WHERE id = ?').get(userId) as any;
 
   res.status(201).json({
     comment: {
-      id: result.lastInsertRowid,
+      id: commentId!,
       content: content.trim(),
       createdAt: now,
       author: { id: userId, nickname: user?.nickname },
@@ -268,9 +308,9 @@ socialRouter.get('/friends/search', authMiddleware, (req: Request, res: Response
 
   const users = db.prepare(`
     SELECT id, nickname, type FROM users
-    WHERE id != ? AND nickname LIKE ?
+    WHERE id != ? AND nickname LIKE ? ESCAPE '\\'
     LIMIT 20
-  `).all(userId, `%${keyword}%`) as any[];
+  `).all(userId, `%${escapeLike(keyword)}%`) as any[];
 
   // 标记是否已是好友
   const result = users.map((u: any) => ({
@@ -306,9 +346,19 @@ socialRouter.post('/friends/add', authMiddleware, (req: Request, res: Response) 
   }
 
   const now = new Date().toISOString();
-  // 双向添加
-  db.prepare('INSERT INTO friendships (user_id, friend_id, created_at) VALUES (?, ?, ?)').run(userId, friendId, now);
-  db.prepare('INSERT INTO friendships (user_id, friend_id, created_at) VALUES (?, ?, ?)').run(friendId, userId, now);
+  // 双向添加（事务保证两条记录同时写入，避免产生单向好友）
+  try {
+    transaction((tx) => {
+      tx.prepare('INSERT INTO friendships (user_id, friend_id, created_at) VALUES (?, ?, ?)').run(userId, friendId, now);
+      tx.prepare('INSERT INTO friendships (user_id, friend_id, created_at) VALUES (?, ?, ?)').run(friendId, userId, now);
+    });
+  } catch (err: any) {
+    if (typeof err.message === 'string' && err.message.includes('UNIQUE')) {
+      res.status(400).json({ error: '已经是好友了' });
+      return;
+    }
+    throw err;
+  }
 
   res.json({ message: `已添加 ${(friend as any).nickname} 为好友！` });
 });

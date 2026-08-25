@@ -6,6 +6,7 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
+import { todayStr } from '../utils/today';
 
 export const petRouter = Router();
 
@@ -143,13 +144,14 @@ function applyOfflineDecay(pet: PetData): PetData {
   if (intervals <= 0) return pet;
 
   const stats = { ...pet.stats };
-  const decay = (rate: number) => Math.max(10, rate * intervals); // 最低 10，不死亡
+  // 属性下限 10（不死亡），已低于下限的保持不变，不会出现负数
+  const dec = (value: number, rate: number) => Math.min(value, Math.max(10, value - rate * intervals));
 
-  stats.hunger -= decay(DECAY_RATES.hunger);
-  stats.cleanliness -= decay(DECAY_RATES.cleanliness);
-  stats.mood -= decay(DECAY_RATES.mood);
-  stats.energy -= decay(DECAY_RATES.energy);
-  stats.health -= decay(DECAY_RATES.health);
+  stats.hunger = dec(stats.hunger, DECAY_RATES.hunger);
+  stats.cleanliness = dec(stats.cleanliness, DECAY_RATES.cleanliness);
+  stats.mood = dec(stats.mood, DECAY_RATES.mood);
+  stats.energy = dec(stats.energy, DECAY_RATES.energy);
+  stats.health = dec(stats.health, DECAY_RATES.health);
 
   return { ...pet, stats, updatedAt: new Date().toISOString() };
 }
@@ -244,7 +246,14 @@ petRouter.get('/', authMiddleware, (req: Request, res: Response) => {
 // 创建新宠物
 petRouter.post('/create', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
-  const { name = '帽子', personality = 'cute' } = req.body;
+  const { personality = 'cute' } = req.body;
+  const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+
+  // 验证宠物名字
+  if (!name || name.length > 20) {
+    res.status(400).json({ error: '宠物名字需要 1-20 个字符' });
+    return;
+  }
 
   // 验证 personality 有效性
   const validPersonalities = ['cute', 'tsundere', 'funny', 'calm', 'cool'];
@@ -343,23 +352,24 @@ petRouter.post('/:petId/interact', authMiddleware, (req: Request, res: Response)
   pet.updatedAt = new Date().toISOString();
 
   // 计算金币奖励（按互动类型区分 + 每日上限防刷）
-  const today = new Date().toISOString().split('T')[0];
-  const dailyRecord = db.prepare('SELECT * FROM daily_interactions WHERE user_id = ? AND interaction_date = ?').get(userId, today) as any;
-
-  let coinReward = 0;
-  const currentCount = dailyRecord?.count || 0;
-  const currentCoins = dailyRecord?.coins_earned || 0;
-
-  // 检查每日上限
-  if (currentCount < MAX_INTERACTIONS_PER_DAY && currentCoins < MAX_COINS_PER_DAY) {
-    const reward = COIN_REWARDS[action] || 3;
-    const remainingCoins = MAX_COINS_PER_DAY - currentCoins;
-    coinReward = Math.min(reward, remainingCoins);
-  }
+  // 每日统计的读取放在同步事务内，避免并发请求重复领取
+  const today = todayStr();
 
   // 事务：更新宠物 + 发放金币 + 记录每日互动（原子操作）
   const updates = petToDb(pet);
+  let coinReward = 0;
   transaction((tx) => {
+    const dailyRecord = tx.prepare('SELECT * FROM daily_interactions WHERE user_id = ? AND interaction_date = ?').get(userId, today) as any;
+
+    const currentCount = dailyRecord?.count || 0;
+    const currentCoins = dailyRecord?.coins_earned || 0;
+
+    if (currentCount < MAX_INTERACTIONS_PER_DAY && currentCoins < MAX_COINS_PER_DAY) {
+      const reward = COIN_REWARDS[action] || 3;
+      const remainingCoins = MAX_COINS_PER_DAY - currentCoins;
+      coinReward = Math.min(reward, remainingCoins);
+    }
+
     // 写回宠物数据
     tx.prepare(`
       UPDATE pets SET

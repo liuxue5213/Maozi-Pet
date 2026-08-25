@@ -6,7 +6,13 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import db from '../db';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'maozi-pet-dev-secret-change-in-production';
+export const JWT_SECRET = process.env.JWT_SECRET || 'maozi-pet-dev-secret-change-in-production';
+
+// 生产环境必须显式配置 JWT_SECRET，否则任何人可伪造 Token
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  throw new Error('生产环境必须配置 JWT_SECRET 环境变量（随机字符串，至少 32 位）');
+}
+
 const TOKEN_EXPIRY = '30d'; // Token 有效期 30 天
 
 export interface AuthPayload {
