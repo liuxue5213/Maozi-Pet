@@ -45,21 +45,27 @@ maozi-pet/
 │   └── images/                # App 图标、封面、横幅
 ├── backend/                   # 后端服务
 │   └── src/
-│       ├── index.ts           # 入口
+│       ├── index.ts           # 入口（安全中间件、限流）
+│       ├── db/index.ts        # SQLite 持久化层
+│       ├── middleware/auth.ts # JWT 鉴权
+│       ├── utils/             # 工具函数
 │       └── routes/
 │           ├── ai.ts          # AI 对话代理
 │           ├── pet.ts         # 宠物数据
-│           └── user.ts        # 用户系统
+│           ├── auth.ts        # 用户系统
+│           ├── shop.ts        # 商城 + 签到
+│           ├── inventory.ts   # 背包/装扮/家园
+│           └── social.ts      # 社区 + 好友
 ├── frontend/                  # 前端应用
 │   └── src/
-│       ├── app/               # 页面路由
-│       │   ├── index.tsx      # 主页
+│       ├── app/               # 页面路由（expo-router）
+│       │   ├── (tabs)/        # 底部 Tab 页（家园/聊天/背包/社交/商城）
+│       │   ├── login.tsx      # 登录/注册
+│       │   ├── register.tsx   # 游客转正
 │       │   ├── onboarding.tsx # 孵化引导
-│       │   ├── chat.tsx       # AI 聊天
-│       │   ├── inventory.tsx  # 背包/家园
-│       │   ├── social.tsx     # 社交
-│       │   └── shop.tsx       # 商城
+│       │   └── profile.tsx    # 个人资料
 │       ├── store/             # 状态管理
+│       ├── components/        # 公共组件
 │       └── config/            # 环境配置
 ├── scripts/                   # 工具脚本
 ├── .env.example               # 环境变量模板

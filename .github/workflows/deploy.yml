@@ -1,7 +1,7 @@
 # ============================================================
 # 帽子AI宠物 - CD 部署工作流
 # 触发条件: push 到 main 分支（后端构建成功后自动部署）
-# 部署目标: 120.48.13.152 (SSH)
+# 部署目标: GitHub Secrets 中配置的服务器 (SSH)
 # 安全说明: 所有连接信息通过 GitHub Secrets 注入
 # ============================================================
 
@@ -31,7 +31,7 @@ jobs:
 
       - name: 📥 安装后端依赖
         working-directory: backend
-        run: npm ci --production
+        run: npm ci --omit=dev
 
       - name: 🏗️ 构建后端
         working-directory: backend
@@ -89,7 +89,7 @@ jobs:
             cd /opt/maozi-pet/backend
 
             # 安装生产依赖
-            npm ci --production
+            npm ci --omit=dev
 
             # 写入环境变量文件（从 GitHub Secrets 注入）
             cat > .env << 'ENVEOF'
@@ -99,6 +99,7 @@ jobs:
             BAILIAN_BASE_URL=${{ secrets.BAILIAN_BASE_URL }}
             BAILIAN_MODEL=${{ secrets.BAILIAN_MODEL || 'qwen-plus' }}
             JWT_SECRET=${{ secrets.JWT_SECRET }}
+            ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS || '*' }}
             ENVEOF
 
             # 使用 PM2 重启（如未安装则自动安装）

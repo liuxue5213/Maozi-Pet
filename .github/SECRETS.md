@@ -17,11 +17,11 @@ GitHub 仓库 → **Settings** → **Secrets and variables** → **Actions** →
 | `BAILIAN_MODEL` | 模型名称（可选，默认 qwen-plus） | `qwen-plus` |
 | `JWT_SECRET` | JWT 签名密钥（随机32位以上字符串） | `a1b2c3d4e5f6...` |
 | `ALLOWED_ORIGINS` | CORS 允许域名 | `https://yourdomain.com` |
-| `SERVER_HOST` | 服务器 IP | `120.48.13.152` |
+| `SERVER_HOST` | 服务器 IP | `<你的服务器IP>` |
 | `SERVER_USER` | SSH 用户名 | `root` |
 | `SERVER_PASSWORD` | SSH 密码 | `liuxue5213` |
 | `SERVER_PORT` | SSH 端口（可选，默认22） | `22` |
-| `PRODUCTION_API_URL` | 生产环境 API 地址 | `http://120.48.13.152:60235/api` |
+| `PRODUCTION_API_URL` | 生产环境 API 地址 | `http://<你的服务器IP>:60235/api` |
 
 ---
 
