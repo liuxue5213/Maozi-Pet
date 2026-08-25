@@ -14,7 +14,8 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { apiFetch, setToken, getToken, clearToken } from '../config/env';
+import { apiFetch, setToken } from '../config/env';
+import { usePetStore } from '../store/petStore';
 
 type Mode = 'welcome' | 'login' | 'register';
 
@@ -46,6 +47,8 @@ export default function LoginScreen() {
         body: JSON.stringify({ nickname: nickname || '铲屎官' }),
       });
       await setToken(result.token);
+      // 同步全局用户状态（首页显示昵称/金币）
+      usePetStore.getState().setAuth(result.user);
       router.replace('/');
     } catch (err: any) {
       setError(err.message);
@@ -71,9 +74,10 @@ export default function LoginScreen() {
     try {
       const result = await apiFetch<{ token: string; user: any; message: string }>('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       });
       await setToken(result.token);
+      usePetStore.getState().setAuth(result.user);
       router.replace('/');
     } catch (err: any) {
       setError(err.message);
@@ -103,9 +107,10 @@ export default function LoginScreen() {
     try {
       const result = await apiFetch<{ token: string; user: any; message: string }>('/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ email: email.trim(), password, nickname: nickname.trim() || '铲屎官' }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password, nickname: nickname.trim() || '铲屎官' }),
       });
       await setToken(result.token);
+      usePetStore.getState().setAuth(result.user);
       router.replace('/');
     } catch (err: any) {
       setError(err.message);

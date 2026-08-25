@@ -17,7 +17,6 @@ import {
 } from 'react-native';
 import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { usePetStore, INTERACTION_LABELS } from '../../store/petStore';
-import { clearToken } from '../../config/env';
 
 const { width } = Dimensions.get('window');
 
@@ -93,21 +92,23 @@ export default function HomeScreen() {
   const router = useRouter();
   const {
     pet, isLoading, isInteracting, error, user,
-    todayEvent, fetchPet, interact, clearEvent, clearError,
+    todayEvent, fetchPet, interact, clearEvent, clearError, logout, fetchUser,
   } = usePetStore();
 
   const [interactMessage, setInteractMessage] = useState('');
 
-  // 退出登录
+  // 退出登录（清除 Token + 重置全局状态）
   const handleLogout = async () => {
-    await clearToken();
+    await logout();
     router.replace('/login');
   };
 
   // 每次页面获得焦点时刷新宠物数据（解决孵化后不更新问题）
+  // 并在 app 重启后恢复用户信息（昵称/金币）
   useFocusEffect(
     useCallback(() => {
       fetchPet();
+      fetchUser();
     }, [])
   );
 

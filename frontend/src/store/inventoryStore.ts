@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import { apiFetch } from '../config/env';
+import { usePetStore } from './petStore';
 
 // ============================================================
 // 类型
@@ -82,7 +83,6 @@ interface InventoryState {
   equipItem: (petId: string, itemId: string, slot?: string) => Promise<void>;
   unequipItem: (petId: string, slot: string) => Promise<void>;
   fetchEquips: (petId: string) => Promise<void>;
-  claimStarter: () => Promise<void>;
 
   // 家园
   fetchScenes: () => Promise<void>;
@@ -127,11 +127,13 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     }
   },
 
-  // 购买
+  // 购买（统一走 /shop/buy，后端事务实现）
   buyItem: async (itemId: string) => {
-    const result = await apiFetch<{ message: string; coinsLeft: number }>(`/inventory/items/${itemId}/buy`, {
+    const result = await apiFetch<{ message: string; coinsLeft: number }>(`/shop/buy/${itemId}`, {
       method: 'POST',
     });
+    // 同步金币到全局用户状态
+    usePetStore.getState().updateCoins(result.coinsLeft);
     // 刷新列表
     await get().fetchItems();
     await get().fetchBackpack();
@@ -164,13 +166,6 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     } catch (err: any) {
       console.error('获取装备失败:', err.message);
     }
-  },
-
-  // 新手礼包
-  claimStarter: async () => {
-    await apiFetch('/inventory/claim-starter', { method: 'POST' });
-    await get().fetchBackpack();
-    await get().fetchCollection();
   },
 
   // 场景

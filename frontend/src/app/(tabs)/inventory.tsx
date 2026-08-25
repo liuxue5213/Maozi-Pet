@@ -110,13 +110,12 @@ export default function InventoryScreen() {
   const {
     items, backpack, isLoading, equips, currentScene, scenes, collection,
     fetchItems, fetchBackpack, buyItem, equipItem, unequipItem, fetchEquips,
-    fetchScenes, switchScene, fetchCollection, claimStarter,
+    fetchScenes, switchScene, fetchCollection,
   } = useInventoryStore();
 
   const [activeTab, setActiveTab] = useState<TabType>('shop');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [message, setMessage] = useState('');
-  const [equipModal, setEquipModal] = useState(false);
 
   const categories = [
     { id: 'all', name: '全部', icon: '📦' },
@@ -158,7 +157,6 @@ export default function InventoryScreen() {
     try {
       await equipItem(pet.id, itemId);
       showMessage('装备成功！');
-      setEquipModal(false);
     } catch (err: any) {
       showMessage(err.message);
     }

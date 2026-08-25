@@ -47,6 +47,10 @@ export async function clearToken(): Promise<void> {
 // API 请求封装（自动带 Token + 统一错误处理）
 // ============================================================
 
+// 认证相关端点：401 表示"账号密码错误"等业务错误，
+// 不应触发"清除 Token + 登录已过期"的拦截逻辑
+const AUTH_PATHS = ['/auth/login', '/auth/register', '/auth/guest', '/auth/upgrade'];
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
@@ -76,8 +80,8 @@ export async function apiFetch<T>(
 
     clearTimeout(timeout);
 
-    // Token 过期/失效 → 清除并提示
-    if (response.status === 401) {
+    // Token 过期/失效 → 清除并提示（认证端点除外）
+    if (response.status === 401 && !AUTH_PATHS.some(p => path.startsWith(p))) {
       await clearToken();
       throw new Error('登录已过期，请重新登录');
     }

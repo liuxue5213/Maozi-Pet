@@ -2,7 +2,7 @@
  * 帽子AI宠物 - 宠物状态管理（持久化 + JWT 鉴权版）
  */
 import { create } from 'zustand';
-import { apiFetch, getToken, setToken, clearToken } from '../config/env';
+import { apiFetch, clearToken } from '../config/env';
 
 // ============================================================
 // 类型
@@ -38,13 +38,15 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  /** 本地占位消息（网络失败兜底），不会作为上下文发送给 AI */
+  isLocal?: boolean;
 }
 
 export interface UserInfo {
   id: string;
   type: 'guest' | 'registered';
   nickname: string;
-  privacy: { showOnSquare: boolean; allowStrangerInteract: boolean; hidePetInfo: boolean };
+  privacy?: { showOnSquare: boolean; allowStrangerInteract: boolean; hidePetInfo: boolean };
   coins: number;
   diamonds: number;
 }
@@ -81,7 +83,9 @@ interface PetState {
   todayEvent: string | null;
 
   // --- Auth Actions ---
-  login: () => Promise<void>;
+  setAuth: (user: UserInfo) => void;
+  updateCoins: (coins: number) => void;
+  fetchUser: () => Promise<void>;
   logout: () => Promise<void>;
 
   // --- Pet Actions ---
@@ -89,6 +93,7 @@ interface PetState {
   fetchPet: () => Promise<void>;
   interact: (action: 'feed' | 'clean' | 'play' | 'comfort' | 'pet') => Promise<string>;
   sendMessage: (text: string) => Promise<void>;
+  loadHistory: (petId: string) => Promise<void>;
   retirePet: () => Promise<string>;
   clearEvent: () => void;
   clearError: () => void;
@@ -108,22 +113,24 @@ export const usePetStore = create<PetState>((set, get) => ({
   // 用户认证
   // ============================================================
 
-  login: async () => {
-    set({ isLoading: true, error: null });
-    try {
-      const result = await apiFetch<{ user: UserInfo; token: string }>('/auth/guest', {
-        method: 'POST',
-        body: JSON.stringify({
-          nickname: '铲屎官',
-        }),
-      });
+  // 登录/注册/游客进入成功后，由页面调用以同步全局用户状态
+  setAuth: (user: UserInfo) => {
+    set({ user, isLoggedIn: true });
+  },
 
-      await setToken(result.token);
+  // 金币变动后同步（互动奖励、购买、签到等场景）
+  updateCoins: (coins: number) => {
+    set(state => ({ user: state.user ? { ...state.user, coins } : state.user }));
+  },
+
+  // 从服务器拉取当前用户信息（app 重启后恢复全局用户状态）
+  fetchUser: async () => {
+    if (get().user) return; // 已有则不重复拉取
+    try {
+      const result = await apiFetch<{ user: UserInfo }>('/auth/profile');
       set({ user: result.user, isLoggedIn: true });
-    } catch (err: any) {
-      set({ error: err.message });
-    } finally {
-      set({ isLoading: false });
+    } catch {
+      // 静默失败（401 已由 apiFetch 处理）
     }
   },
 
@@ -146,6 +153,7 @@ export const usePetStore = create<PetState>((set, get) => ({
       set({ pet: result.pet });
     } catch (err: any) {
       set({ error: err.message });
+      throw err; // 让孵化页面感知失败，停留并提示
     } finally {
       set({ isLoading: false });
     }
@@ -156,9 +164,8 @@ export const usePetStore = create<PetState>((set, get) => ({
     try {
       const result = await apiFetch<{ pets: Pet[] }>('/pet');
       const activePet = result.pets?.find(p => !p.isRetired);
-      if (activePet) {
-        set({ pet: activePet });
-      }
+      // 没有活跃宠物时清空，避免残留旧数据（如全部退休后）
+      set({ pet: activePet || null });
     } catch (err: any) {
       set({ error: err.message });
     } finally {
@@ -172,11 +179,15 @@ export const usePetStore = create<PetState>((set, get) => ({
 
     set({ isInteracting: true, error: null });
     try {
-      const result = await apiFetch<{ pet: Pet; message: string }>(`/pet/${pet.id}/interact`, {
+      const result = await apiFetch<{ pet: Pet; message: string; coinReward: number; totalCoins: number }>(`/pet/${pet.id}/interact`, {
         method: 'POST',
         body: JSON.stringify({ action }),
       });
       set({ pet: result.pet });
+      // 同步金币到全局用户状态（首页用户栏实时显示）
+      if (typeof result.totalCoins === 'number') {
+        get().updateCoins(result.totalCoins);
+      }
       return result.message;
     } catch (err: any) {
       set({ error: err.message });
@@ -211,7 +222,8 @@ export const usePetStore = create<PetState>((set, get) => ({
       const result = await apiFetch<{ reply: string }>('/ai/chat', {
         method: 'POST',
         body: JSON.stringify({
-          messages: [...get().chatHistory, userMessage],
+          // 过滤本地占位消息，避免污染 AI 上下文
+          messages: [...get().chatHistory.filter(m => !m.isLocal), userMessage],
           personality: pet.personality,
           petState: pet.stats,
           petId: pet.id,
@@ -231,9 +243,24 @@ export const usePetStore = create<PetState>((set, get) => ({
           role: 'assistant',
           content: '喵...（网络开小差了，等一下再试试嘛）',
           timestamp: new Date().toISOString(),
+          isLocal: true,
         }],
         error: err.message,
       }));
+    }
+  },
+
+  // 从服务器加载聊天记录（重启 app 后恢复对话）
+  loadHistory: async (petId: string) => {
+    try {
+      const result = await apiFetch<{ messages: { role: string; content: string; created_at: string }[] }>(`/ai/history/${petId}`);
+      const history: ChatMessage[] = (result.messages || [])
+        .filter((m): m is { role: 'user' | 'assistant'; content: string; created_at: string } =>
+          (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+        .map(m => ({ role: m.role, content: m.content, timestamp: m.created_at }));
+      set({ chatHistory: history });
+    } catch {
+      // 静默失败，保留本地消息
     }
   },
 

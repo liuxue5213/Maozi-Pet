@@ -13,13 +13,24 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { usePetStore } from '../../store/petStore';
 
 export default function ChatScreen() {
-  const { pet, chatHistory, sendMessage } = usePetStore();
+  const { pet, chatHistory, sendMessage, loadHistory } = usePetStore();
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+
+  // 进入页面时从服务器恢复聊天记录（重启 app 不丢对话）
+  useFocusEffect(
+    React.useCallback(() => {
+      const currentPet = usePetStore.getState().pet;
+      if (currentPet) {
+        loadHistory(currentPet.id);
+      }
+    }, [loadHistory])
+  );
 
   useEffect(() => {
     // 自动滚动到底部

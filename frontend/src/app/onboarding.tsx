@@ -29,11 +29,19 @@ export default function OnboardingScreen() {
   const [selected, setSelected] = useState<Personality>('cute');
   const [name, setName] = useState('帽子');
 
+  const [hatchError, setHatchError] = useState('');
+
   const handleHatch = async () => {
     const finalName = name.trim() || '帽子';
-    await createPet(finalName, selected);
-    // 返回首页 Tab，useFocusEffect 会自动刷新宠物数据
-    router.push('/');
+    setHatchError('');
+    try {
+      await createPet(finalName, selected);
+      // 成功才返回首页，useFocusEffect 会自动刷新宠物数据
+      router.push('/');
+    } catch {
+      // 失败停留本页并提示（createPet 已把错误写入 store）
+      setHatchError('孵化失败了，请检查网络后重试');
+    }
   };
 
   const randomNames = ['咪咪', '小白', '橘子', '奶茶', '布丁', '芝麻', '汤圆', '年糕', '花花', '豆豆'];
@@ -99,7 +107,11 @@ export default function OnboardingScreen() {
         </Text>
       </TouchableOpacity>
 
-      <Text style={styles.hint}>💡 性格将永久影响宠物的说话方式哦~</Text>
+      {hatchError ? (
+        <Text style={styles.errorText}>{hatchError}</Text>
+      ) : (
+        <Text style={styles.hint}>💡 性格将永久影响宠物的说话方式哦~</Text>
+      )}
     </ScrollView>
   );
 }
@@ -161,4 +173,5 @@ const styles = StyleSheet.create({
   hatchBtnDisabled: { opacity: 0.6 },
   hatchBtnText: { fontSize: 18, fontWeight: '700', color: '#FFF' },
   hint: { fontSize: 12, color: '#BBB', textAlign: 'center', marginTop: 16 },
+  errorText: { fontSize: 12, color: '#C0392B', textAlign: 'center', marginTop: 16 },
 });

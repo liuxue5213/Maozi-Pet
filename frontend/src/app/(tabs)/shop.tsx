@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { apiFetch } from '../../config/env';
+import { usePetStore } from '../../store/petStore';
 
 const { width } = Dimensions.get('window');
 const ITEM_WIDTH = (width - 48) / 2;
@@ -52,8 +53,8 @@ interface CheckinStatus {
 
 export default function ShopScreen() {
   const router = useRouter();
+  const updateCoins = usePetStore(s => s.updateCoins);
   const [items, setItems] = useState<ShopItem[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [checkin, setCheckin] = useState<CheckinStatus | null>(null);
   const [message, setMessage] = useState('');
@@ -87,7 +88,7 @@ export default function ShopScreen() {
   const fetchItems = async () => {
     try {
       const query = selectedCategory !== 'all' ? `?category=${selectedCategory}` : '';
-      const result = await apiFetch<{ items: ShopItem[]; categories: any[] }>(`/shop/items${query}`);
+      const result = await apiFetch<{ items: ShopItem[] }>(`/shop/items${query}`);
       setItems(result.items);
     } catch (err: any) {
       console.error('获取商品失败:', err.message);
@@ -105,6 +106,7 @@ export default function ShopScreen() {
         totalCoins: number;
       }>('/shop/checkin', { method: 'POST' });
       showMessage(result.message);
+      updateCoins(result.totalCoins);
       await fetchCheckin();
     } catch (err: any) {
       showMessage(err.message);
@@ -130,6 +132,7 @@ export default function ShopScreen() {
         method: 'POST',
       });
       showMessage(result.message);
+      updateCoins(result.coinsLeft);
       await fetchItems();
     } catch (err: any) {
       showMessage(err.message);

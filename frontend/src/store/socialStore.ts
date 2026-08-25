@@ -106,7 +106,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   // ============================================================
 
   fetchPosts: async (refresh = false) => {
-    const page = refresh ? 1 : get().currentPage;
+    // 加载更多时请求下一页（上次已加载页 + 1），否则永远重复第 1 页
+    const page = refresh ? 1 : get().currentPage + 1;
     set({ isLoadingPosts: true, error: null });
 
     try {
@@ -116,8 +117,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       }>(`/social/posts?page=${page}&pageSize=20`);
 
       set(state => ({
-        posts: refresh ? result.posts : [...state.posts, ...result.posts],
-        currentPage: result.pagination.page,
+        posts: refresh || page === 1 ? result.posts : [...state.posts, ...result.posts],
+        currentPage: page,
         hasMorePosts: result.pagination.hasMore,
       }));
     } catch (err: any) {
@@ -225,7 +226,6 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       set({ error: err.message });
       throw err;
     }
-    // 刷新搜索列表（标记为已添加）
     // 刷新搜索列表（标记为已添加）
     set(state => ({
       searchResults: state.searchResults.map(u =>
