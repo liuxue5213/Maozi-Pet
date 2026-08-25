@@ -4,7 +4,6 @@
  */
 import { create } from 'zustand';
 import { apiFetch } from '../config/env';
-import { usePetStore } from './petStore';
 
 // ============================================================
 // 类型
@@ -57,7 +56,6 @@ export interface CollectionItem {
 
 interface InventoryState {
   // 物品
-  items: ItemDef[];
   backpack: ItemDef[];
   isLoading: boolean;
 
@@ -77,9 +75,7 @@ interface InventoryState {
   };
 
   // Actions
-  fetchItems: () => Promise<void>;
   fetchBackpack: () => Promise<void>;
-  buyItem: (itemId: string) => Promise<string>;
   equipItem: (petId: string, itemId: string, slot?: string) => Promise<void>;
   unequipItem: (petId: string, slot: string) => Promise<void>;
   fetchEquips: (petId: string) => Promise<void>;
@@ -94,7 +90,6 @@ interface InventoryState {
 }
 
 export const useInventoryStore = create<InventoryState>((set, get) => ({
-  items: [],
   backpack: [],
   isLoading: false,
   equips: [],
@@ -103,16 +98,6 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   currentScene: null,
   furniture: [],
   collection: { overview: { total: 0, collected: 0, progress: 0 }, categories: [] },
-
-  // 商城物品
-  fetchItems: async () => {
-    try {
-      const result = await apiFetch<{ items: ItemDef[]; categories: any[] }>('/inventory/items');
-      set({ items: result.items });
-    } catch (err: any) {
-      console.error('获取物品失败:', err.message);
-    }
-  },
 
   // 背包
   fetchBackpack: async () => {
@@ -125,19 +110,6 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     } finally {
       set({ isLoading: false });
     }
-  },
-
-  // 购买（统一走 /shop/buy，后端事务实现）
-  buyItem: async (itemId: string) => {
-    const result = await apiFetch<{ message: string; coinsLeft: number }>(`/shop/buy/${itemId}`, {
-      method: 'POST',
-    });
-    // 同步金币到全局用户状态
-    usePetStore.getState().updateCoins(result.coinsLeft);
-    // 刷新列表
-    await get().fetchItems();
-    await get().fetchBackpack();
-    return result.message;
   },
 
   // 装备

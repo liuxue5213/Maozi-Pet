@@ -1,6 +1,7 @@
 /**
  * 帽子AI宠物 - 背包 & 家园页
- * 商城购买、装备穿戴、家园场景、图鉴收集
+ * 装备穿戴、家园场景、图鉴收集
+ * （购物统一走独立商城页，不再内嵌商城 tab）
  */
 import React, { useState, useCallback } from 'react';
 import {
@@ -9,10 +10,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Modal,
   Platform,
-  ActivityIndicator,
-  FlatList,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useInventoryStore, ItemDef, SceneDef } from '../../store/inventoryStore';
@@ -21,50 +19,6 @@ import { usePetStore } from '../../store/petStore';
 // ============================================================
 // 子组件
 // ============================================================
-
-function ItemCard({
-  item,
-  onBuy,
-  onEquip,
-  mode,
-}: {
-  item: ItemDef;
-  onBuy?: () => void;
-  onEquip?: () => void;
-  mode: 'shop' | 'backpack';
-}) {
-  const rarityColor = item.rarity === 'epic' ? '#9B59B6' : item.rarity === 'rare' ? '#54A0FF' : '#95A5A6';
-  const rarityLabel = item.rarity === 'epic' ? '史诗' : item.rarity === 'rare' ? '稀有' : '普通';
-
-  return (
-    <View style={styles.itemCard}>
-      <View style={[styles.itemIconBox, { borderColor: rarityColor }]}>
-        <Text style={styles.itemIcon}>{item.icon}</Text>
-      </View>
-      <Text style={styles.itemName}>{item.name}</Text>
-      <Text style={[styles.itemRarity, { color: rarityColor }]}>{rarityLabel}</Text>
-      {item.description && <Text style={styles.itemDesc}>{item.description}</Text>}
-
-      {mode === 'shop' && (
-        item.owned ? (
-          <View style={styles.ownedBadge}>
-            <Text style={styles.ownedText}>已拥有</Text>
-          </View>
-        ) : (
-          <TouchableOpacity style={styles.buyBtn} onPress={onBuy}>
-            <Text style={styles.buyBtnText}>🪙 {item.priceCoins}</Text>
-          </TouchableOpacity>
-        )
-      )}
-
-      {mode === 'backpack' && (
-        <TouchableOpacity style={styles.equipBtn} onPress={onEquip}>
-          <Text style={styles.equipBtnText}>装备</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-}
 
 function SceneCard({
   scene,
@@ -103,31 +57,21 @@ function SceneCard({
 // 主页面
 // ============================================================
 
-type TabType = 'shop' | 'equip' | 'home' | 'collection';
+type TabType = 'equip' | 'home' | 'collection';
 
 export default function InventoryScreen() {
   const { pet } = usePetStore();
   const {
-    items, backpack, isLoading, equips, currentScene, scenes, collection,
-    fetchItems, fetchBackpack, buyItem, equipItem, unequipItem, fetchEquips,
+    backpack, equips, currentScene, scenes, collection,
+    fetchBackpack, equipItem, unequipItem, fetchEquips,
     fetchScenes, switchScene, fetchCollection,
   } = useInventoryStore();
 
-  const [activeTab, setActiveTab] = useState<TabType>('shop');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [activeTab, setActiveTab] = useState<TabType>('equip');
   const [message, setMessage] = useState('');
-
-  const categories = [
-    { id: 'all', name: '全部', icon: '📦' },
-    { id: 'hat', name: '头饰', icon: '🎩' },
-    { id: 'clothing', name: '衣服', icon: '👕' },
-    { id: 'accessory', name: '配饰', icon: '🎀' },
-    { id: 'effect', name: '特效', icon: '✨' },
-  ];
 
   useFocusEffect(
     useCallback(() => {
-      fetchItems();
       fetchBackpack();
       fetchScenes();
       fetchCollection();
@@ -138,15 +82,6 @@ export default function InventoryScreen() {
   const showMessage = (msg: string) => {
     setMessage(msg);
     setTimeout(() => setMessage(''), 2500);
-  };
-
-  const handleBuy = async (itemId: string) => {
-    try {
-      const msg = await buyItem(itemId);
-      showMessage(msg);
-    } catch (err: any) {
-      showMessage(err.message);
-    }
   };
 
   const handleEquip = async (itemId: string) => {
@@ -171,12 +106,7 @@ export default function InventoryScreen() {
     }
   };
 
-  const filteredItems = selectedCategory === 'all'
-    ? items
-    : items.filter(i => i.category === selectedCategory);
-
   const tabs: { key: TabType; label: string; icon: string }[] = [
-    { key: 'shop', label: '商城', icon: '🛍️' },
     { key: 'equip', label: '装备', icon: '👗' },
     { key: 'home', label: '家园', icon: '🏠' },
     { key: 'collection', label: '图鉴', icon: '📖' },
@@ -204,41 +134,6 @@ export default function InventoryScreen() {
           <Text style={styles.messageText}>{message}</Text>
         </View>
       ) : null}
-
-      {/* 商城 Tab */}
-      {activeTab === 'shop' && (
-        <View style={styles.content}>
-          {/* 分类筛选 */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryBar}>
-            {categories.map(cat => (
-              <TouchableOpacity
-                key={cat.id}
-                style={[styles.categoryChip, selectedCategory === cat.id && styles.categoryChipActive]}
-                onPress={() => setSelectedCategory(cat.id)}
-              >
-                <Text style={[styles.categoryText, selectedCategory === cat.id && styles.categoryTextActive]}>
-                  {cat.icon} {cat.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          <FlatList
-            data={filteredItems}
-            numColumns={3}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => (
-              <ItemCard item={item} mode="shop" onBuy={() => handleBuy(item.id)} />
-            )}
-            contentContainerStyle={styles.grid}
-            ListEmptyComponent={
-              <View style={styles.emptyBox}>
-                <Text style={styles.emptyText}>暂无物品</Text>
-              </View>
-            }
-          />
-        </View>
-      )}
 
       {/* 装备 Tab */}
       {activeTab === 'equip' && (
@@ -281,15 +176,9 @@ export default function InventoryScreen() {
                           </TouchableOpacity>
                         </View>
                       ) : (
-                        <TouchableOpacity
-                          style={styles.slotEmpty}
-                          onPress={() => {
-                            setSelectedCategory(slot);
-                            setActiveTab('shop');
-                          }}
-                        >
-                          <Text style={styles.slotEmptyText}>+ 选择物品</Text>
-                        </TouchableOpacity>
+                        <View style={styles.slotEmpty}>
+                          <Text style={styles.slotEmptyText}>未装备</Text>
+                        </View>
                       )}
                     </View>
                   );
@@ -409,73 +298,10 @@ const styles = StyleSheet.create({
   messageText: { fontSize: 13, color: '#5A7A6A', textAlign: 'center' },
   content: { flex: 1 },
 
-  // 商城
-  categoryBar: { paddingHorizontal: 12, paddingVertical: 8, flexGrow: 0 },
-  categoryChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#F0F0F0',
-    marginRight: 8,
-  },
-  categoryChipActive: { backgroundColor: '#FFF0E0' },
-  categoryText: { fontSize: 12, color: '#999' },
-  categoryTextActive: { color: '#FF9F43', fontWeight: '600' },
-  grid: { paddingHorizontal: 8, paddingBottom: 20 },
-  itemCard: {
-    flex: 1,
-    margin: 4,
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 10,
-    alignItems: 'center',
-    maxWidth: '32%',
-    ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3 }, android: { elevation: 1 } }),
-  },
-  itemIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#FFF9F0',
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  itemIcon: { fontSize: 24 },
-  itemName: { fontSize: 12, fontWeight: '600', color: '#5A4A4A', textAlign: 'center' },
-  itemRarity: { fontSize: 10, marginTop: 1 },
-  itemDesc: { fontSize: 9, color: '#BBB', textAlign: 'center', marginTop: 2 },
-  buyBtn: {
-    marginTop: 6,
-    backgroundColor: '#FF9F43',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  buyBtnText: { fontSize: 11, fontWeight: '600', color: '#FFF' },
-  ownedBadge: {
-    marginTop: 6,
-    backgroundColor: '#F0F0F0',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  ownedText: { fontSize: 11, color: '#999' },
-  equipBtn: {
-    marginTop: 6,
-    backgroundColor: '#E8F8F5',
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  equipBtnText: { fontSize: 11, fontWeight: '600', color: '#5A7A6A' },
-  emptyBox: { flex: 1, alignItems: 'center', paddingTop: 40 },
-  emptyText: { fontSize: 14, color: '#BBB' },
-
   // 装备
   emptyState: { alignItems: 'center', paddingTop: 80 },
   emptyEmoji: { fontSize: 50, marginBottom: 12 },
+  emptyText: { fontSize: 14, color: '#BBB' },
   equipPreview: { alignItems: 'center', paddingVertical: 20, backgroundColor: '#FFF', marginBottom: 16 },
   petDisplay: {
     width: 100,
