@@ -47,7 +47,7 @@ shopRouter.get('/checkin', authMiddleware, (req: Request, res: Response) => {
   // 生成7天日历视图
   const calendar = Array.from({ length: 7 }, (_, i) => {
     const day = nextStreakDay + i - 1;
-    const cycleDay = ((day - 1) % 7); // 0-6
+    const cycleDay = ((day - 1) % 7 + 7) % 7; // 0-6，避免 day=0（完成 7 天周期）时出现负数索引导致 reward 为 undefined
     return {
       day: i + 1,
       reward: CHECKIN_REWARDS[cycleDay],

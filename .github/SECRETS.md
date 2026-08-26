@@ -22,6 +22,23 @@ GitHub 仓库 → **Settings** → **Secrets and variables** → **Actions** →
 | `SERVER_PASSWORD` | SSH 密码 | `liuxue5213` |
 | `SERVER_PORT` | SSH 端口（可选，默认22） | `22` |
 | `PRODUCTION_API_URL` | 生产环境 API 地址 | `http://<你的服务器IP>:60235/api` |
+| `EXPO_TOKEN` | Expo 访问令牌（用于 `build-apk.yml` 云端打包 Android APK） | `eyJ...`（在 expo.dev 账号设置页生成） |
+
+---
+
+## 🤖 APK 打包相关说明（build-apk.yml）
+
+`build-apk.yml` 通过 **EAS Build** 云端构建 Android APK，需要额外准备：
+
+1. 在 GitHub 仓库 Secrets 中配置 `EXPO_TOKEN`（Expo 官网 → 账号 → 访问令牌 生成）。
+2. **首次使用前**在本地 `frontend/` 目录执行一次 `npx eas build:configure`，初始化 EAS 项目并关联账号。
+3. 修改 `frontend/eas.json` 中 `preview` / `production` 的 `EXPO_PUBLIC_API_BASE_URL`：
+   必须指向**真实服务器地址**（如 `https://<服务器IP>:60235/api`），否则打包出的 App 连不上后端。
+4. 触发方式：在 Actions 页面手动 `Run workflow`，或推送 `v1.0.0` 这类 tag 自动触发。
+5. 构建完成后，在 Actions 运行记录的 **Artifacts** 中下载 `maozi-pet.apk`。
+
+> 注意：当前项目**没有**任何本地 Gradle / keystore 配置，APK 完全依赖 EAS 云端构建。
+> `.gitignore` 已忽略 `*.apk *.aab`，产物仅通过 Actions Artifacts 分发，不入库。
 
 ---
 

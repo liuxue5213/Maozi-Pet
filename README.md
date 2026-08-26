@@ -38,8 +38,9 @@
 maozi-pet/
 ├── .github/
 │   ├── workflows/
-│   │   ├── build.yml          # PR 构建检查
-│   │   └── deploy.yml         # 自动部署到服务器
+│   │   ├── build.yml          # PR 构建检查（后端 + 前端 Web）
+│   │   ├── deploy.yml         # 自动部署后端 + 前端 Web 到服务器
+│   │   └── build-apk.yml      # 通过 EAS Build 云端打包 Android APK
 │   └── SECRETS.md             # Secrets 配置指南
 ├── assets/
 │   └── images/                # App 图标、封面、横幅

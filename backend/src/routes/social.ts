@@ -312,12 +312,20 @@ socialRouter.get('/friends/search', authMiddleware, (req: Request, res: Response
     LIMIT 20
   `).all(userId, `%${escapeLike(keyword)}%`) as any[];
 
+  // 一次性查出已是好友的 ID（避免逐用户查询导致的 N+1）
+  const friendIds = new Set<string>();
+  if (users.length > 0) {
+    const placeholders = users.map(() => '?').join(',');
+    (db.prepare(`SELECT friend_id FROM friendships WHERE user_id = ? AND friend_id IN (${placeholders})`)
+      .all(userId, ...users.map(u => u.id)) as any[]).forEach(r => friendIds.add(r.friend_id));
+  }
+
   // 标记是否已是好友
   const result = users.map((u: any) => ({
     id: u.id,
     nickname: u.nickname,
     type: u.type,
-    isFriend: !!db.prepare('SELECT 1 FROM friendships WHERE user_id = ? AND friend_id = ?').get(userId, u.id),
+    isFriend: friendIds.has(u.id),
   }));
 
   res.json({ users: result });

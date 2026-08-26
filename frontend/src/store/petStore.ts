@@ -222,8 +222,9 @@ export const usePetStore = create<PetState>((set, get) => ({
       const result = await apiFetch<{ reply: string }>('/ai/chat', {
         method: 'POST',
         body: JSON.stringify({
-          // 过滤本地占位消息，避免污染 AI 上下文
-          messages: [...get().chatHistory.filter(m => !m.isLocal), userMessage],
+          // chatHistory 已包含刚发出的 userMessage，直接发送过滤后的历史即可，
+          // 避免重复追加导致最后一条用户消息出现两次、污染 AI 上下文
+          messages: [...get().chatHistory.filter(m => !m.isLocal)],
           personality: pet.personality,
           petState: pet.stats,
           petId: pet.id,
