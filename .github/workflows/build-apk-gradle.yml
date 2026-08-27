@@ -1,0 +1,87 @@
+# ============================================================
+# 帽子AI宠物 - Android APK 打包（GitHub Runner 直接 Gradle 构建）
+# 与 build-apk.yml（EAS 云构建，需 EXPO_TOKEN）二选一即可。
+# 本流程零密钥依赖：在 GitHub 托管 Runner 上完成 prebuild + assembleDebug。
+#
+# 触发方式：
+#   1. 手动触发（workflow_dispatch），可自定义打包进 APK 的后端地址
+#   2. 推送 v* 标签自动触发
+#
+# 前置要求：
+#   无。所有依赖由 CI 自动安装（Node 18 / JDK 17 / Android SDK 均预装于 runner）。
+#
+# 产物：
+#   Actions 运行页面 → Artifacts → app-debug.apk（保留 30 天）
+#
+# 注意：默认 API 地址 http://10.0.2.2:60235/api 仅适用于模拟器访问宿主机；
+#       真机安装请手动触发并填入真实服务器地址（如 http://你的IP:60235/api）。
+# ============================================================
+
+name: Build Android APK (Gradle)
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: 'APK 内置的后端 API 地址'
+        required: false
+        default: 'http://10.0.2.2:60235/api'
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: 🔧 Gradle 构建 Debug APK
+    runs-on: ubuntu-latest
+
+    # API 地址：手动触发用输入值；标签触发退回模拟器默认值
+    env:
+      EXPO_PUBLIC_API_BASE_URL: ${{ inputs.api_base_url || 'http://10.0.2.2:60235/api' }}
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 📦 设置 Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: ☕ 设置 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 🤖 配置 Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          # ubuntu-latest runner 已预装 SDK 与 emulator，确认目录存在
+          ls "$ANDROID_HOME/platforms" | head -3
+
+      - name: 📥 安装前端依赖
+        working-directory: frontend
+        run: npm ci
+
+      - name: 🔧 Expo Prebuild 生成原生工程
+        working-directory: frontend
+        run: npx expo prebuild --platform android --no-install
+
+      - name: 🏗️ Gradle 构建 Debug APK
+        working-directory: frontend/android
+        run: ./gradlew :app:assembleDebug -x lint --no-daemon
+
+      - name: 📤 上传 APK 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: maozi-pet-debug-apk
+          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+          if-no-files-found: error

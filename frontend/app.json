@@ -18,12 +18,23 @@
       "adaptiveIcon": {
         "backgroundColor": "#FFF5F7"
       },
-      "package": "com.maozi.pet"
+      "package": "com.maozi.pet",
+      "usesCleartextTraffic": true
     },
     "web": {
       "favicon": "../assets/images/app-icon.png",
       "bundler": "metro"
     },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
     "extra": {
       "apiBaseUrl": "http://localhost:60235/api",
       "router": {

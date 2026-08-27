@@ -68,3 +68,6 @@ backend/data/
 tmp/
 temp/
 *.tmp
+
+# Expo prebuild 原生工程（CI 上自动生成）
+frontend/android/
