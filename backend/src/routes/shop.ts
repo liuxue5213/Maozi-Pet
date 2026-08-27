@@ -157,8 +157,10 @@ shopRouter.get('/items', authMiddleware, (req: Request, res: Response) => {
     collected: collectedSet.has(item.id),
   }));
 
+  // 必须返回映射后的 result（camelCase）：原始 items 是数据库 snake_case 行，
+  // 直接返回会导致前端价格/分类筛选/已拥有标记全部失效
   res.json({
-    items,
+    items: result,
     categories: [
       { id: 'all', name: '全部', icon: '🛍️' },
       { id: 'decoration', name: '装扮', icon: '👗' },

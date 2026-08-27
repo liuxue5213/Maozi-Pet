@@ -39,10 +39,10 @@ app.use(cors({
   maxAge: 86400, // 预检缓存 24 小时
 }));
 
-// 全局基础速率限制
+// 全局基础速率限制（可通过 RATE_LIMIT_MAX 环境变量调整，便于压测）
 const globalLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,  // 1 分钟
-  max: 60,                    // 每分钟最多 60 次
+  max: parseInt(process.env.RATE_LIMIT_MAX || '60', 10),
   message: { error: '请求过于频繁，请稍后再试' },
   standardHeaders: true,
 });
@@ -51,8 +51,8 @@ app.use(globalLimiter);
 // AI 接口专属更严格限制
 const aiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
-  max: 20,                    // 每分钟最多 20 次 AI 调用
-  message: { error: 'AI 对话请求过于频繁，请稍等一下喵~' },
+  max: parseInt(process.env.AI_RATE_LIMIT_MAX || '20', 10),
+  message: { error: 'AI 对话请求过于频繁，请等一下喵~' },
 });
 
 // 请求体解析
