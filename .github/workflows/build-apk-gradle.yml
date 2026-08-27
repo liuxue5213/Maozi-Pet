@@ -74,6 +74,12 @@ jobs:
         working-directory: frontend
         run: npx expo prebuild --platform android --no-install
 
+      - name: 🛠️ 调整 Gradle JVM 内存（默认 2G 不够转换 Hermes AAR）
+        working-directory: frontend/android
+        run: |
+          sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g/' gradle.properties
+          grep org.gradle.jvmargs gradle.properties
+
       - name: 🏗️ Gradle 构建 Debug APK
         working-directory: frontend/android
         run: ./gradlew :app:assembleDebug -x lint --no-daemon
