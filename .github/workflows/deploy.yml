@@ -31,7 +31,9 @@ jobs:
 
       - name: 📥 安装后端依赖
         working-directory: backend
-        run: npm ci --omit=dev
+        # 必须安装完整依赖：build 脚本依赖 devDependencies 中的 typescript。
+        # 服务器上的生产依赖由后续 SSH 步骤中服务器的 npm ci --omit=dev 负责。
+        run: npm ci
 
       - name: 🏗️ 构建后端
         working-directory: backend
