@@ -201,6 +201,11 @@ export default function ProfileScreen() {
         )}
       </View>
 
+      {/* 档案馆入口 */}
+      <TouchableOpacity style={styles.archiveBtn} onPress={() => router.push('/archive')}>
+        <Text style={styles.archiveBtnText}>🏛️ 宠物档案馆</Text>
+      </TouchableOpacity>
+
       {/* 退出登录 */}
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <Text style={styles.logoutText}>退出登录</Text>
@@ -353,6 +358,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoutText: { fontSize: 15, fontWeight: '600', color: '#FF6B6B' },
+  archiveBtn: {
+    marginTop: 12,
+    marginHorizontal: 16,
+    backgroundColor: '#FFF0E0',
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  archiveBtnText: { fontSize: 14, fontWeight: '600', color: '#FF9F43' },
   footer: { alignItems: 'center', paddingVertical: 24 },
   footerText: { fontSize: 12, color: '#CCC' },
 });

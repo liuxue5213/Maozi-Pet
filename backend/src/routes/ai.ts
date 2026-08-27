@@ -205,7 +205,7 @@ aiRouter.post('/event', authMiddleware, async (req: Request, res: Response) => {
     const result = await callBailianAPIWithTimeout([
       { role: 'system', content: PERSONALITY_PROMPTS[personality] || PERSONALITY_PROMPTS.cute },
       { role: 'user', content: prompt },
-    ]);
+    ]).catch(() => getLocalEvent(personality));
 
     try {
       const parsed = JSON.parse(result);
@@ -314,6 +314,44 @@ async function callBailianAPIWithTimeout(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// 本地兜底随机事件（AI API 不可用时使用）
+function getLocalEvent(personality: string): string {
+  const events: Record<string, string[]> = {
+    cute: [
+      '帽子在角落里发现了一个毛线球，拍了一下午',
+      '帽子晒着太阳打盹，尾巴一晃一晃的',
+      '帽子偷偷把主人的袜子藏进了小窝里',
+    ],
+    tsundere: [
+      '帽子假装不在意地路过主人，尾巴却竖得老高',
+      '帽子把零食推到一边，等没人看的时候又悄悄吃掉',
+      '帽子霸占了整个猫窝，谁靠近就哼一声',
+    ],
+    funny: [
+      '帽子追自己的尾巴转了三圈，撞到了猫爬架',
+      '帽子对着镜子里的自己哈气，结果被吓了一跳',
+      '帽子试图跳上冰箱，中途放弃直接躺平',
+    ],
+    calm: [
+      '帽子安静地看着窗外的雨发呆',
+      '帽子轻轻蹭了蹭主人的手心，又眯上了眼',
+      '帽子蜷在小窝里，呼吸轻得像一片羽毛',
+    ],
+    cool: [
+      '帽子坐在高处俯瞰整个房间，像个沉默的王',
+      '帽子对逗猫棒不屑一顾，转身只用了一秒',
+      '帽子望着月亮坐了很久，不知道在想什么',
+    ],
+  };
+  const animations = ['dream', 'discover', 'gift', 'walk', 'happy'];
+  const list = events[personality] || events.cute;
+  return JSON.stringify({
+    event: list[Math.floor(Math.random() * list.length)],
+    reward: `金币 x${3 + Math.floor(Math.random() * 5)}`,
+    animation: animations[Math.floor(Math.random() * animations.length)],
+  });
 }
 
 function isDailyLimitReached(userId: string): boolean {

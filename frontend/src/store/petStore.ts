@@ -94,6 +94,7 @@ interface PetState {
   interact: (action: 'feed' | 'clean' | 'play' | 'comfort' | 'pet') => Promise<string>;
   sendMessage: (text: string) => Promise<void>;
   loadHistory: (petId: string) => Promise<void>;
+  fetchTodayEvent: () => Promise<void>;
   retirePet: () => Promise<string>;
   clearEvent: () => void;
   clearError: () => void;
@@ -262,6 +263,23 @@ export const usePetStore = create<PetState>((set, get) => ({
       set({ chatHistory: history });
     } catch {
       // 静默失败，保留本地消息
+    }
+  },
+
+  // 触发随机日常事件（进入首页时调用一次；后端 AI 不可用时有本地兜底）
+  fetchTodayEvent: async () => {
+    const { pet, todayEvent } = get();
+    if (!pet || todayEvent) return;
+    try {
+      const result = await apiFetch<{ event: string; reward: string }>('/ai/event', {
+        method: 'POST',
+        body: JSON.stringify({ personality: pet.personality, petState: pet.stats }),
+      });
+      if (result?.event) {
+        set({ todayEvent: `${result.event}（${result.reward || '有小惊喜'}）` });
+      }
+    } catch {
+      // 静默失败，事件是锦上添花的功能
     }
   },
 

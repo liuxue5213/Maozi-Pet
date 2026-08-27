@@ -17,14 +17,37 @@ import {
 } from 'react-native';
 import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { usePetStore, INTERACTION_LABELS } from '../../store/petStore';
+import { useInventoryStore } from '../../store/inventoryStore';
+import { useRef } from 'react';
 
 const { width } = Dimensions.get('window');
+
+// 与后端 pet.ts 的升级曲线保持一致：每级需要 level * 20 经验
+function expToNextLevel(level: number): number {
+  return level * 20;
+}
 
 // ============================================================
 // 子组件
 // ============================================================
 
-function PetAvatar({ stage, mood }: { stage: string; mood: number }) {
+interface EquippedItem {
+  slot: string;
+  itemId: string;
+  name: string;
+  icon: string;
+  category: string;
+}
+
+// 已装备物品在宠物圆盘上的摆放位置（按槽位）
+const EQUIP_POSITIONS: Record<string, { top?: number; bottom?: number; left?: number; right?: number }> = {
+  hat: { top: 8, right: 18 },
+  clothing: { bottom: 10, left: 18 },
+  accessory: { bottom: 24, right: 12 },
+  effect: { top: 28, left: 14 },
+};
+
+function PetAvatar({ stage, mood, equips }: { stage: string; mood: number; equips: EquippedItem[] }) {
   const scaleAnim = React.useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
@@ -47,6 +70,12 @@ function PetAvatar({ stage, mood }: { stage: string; mood: number }) {
   return (
     <Animated.View style={[styles.petContainer, { transform: [{ scale: scaleAnim }] }]}>
       <Text style={styles.petEmoji}>{getPetEmoji()}</Text>
+      {/* 渲染已装备的装扮（商城购买后在此生效） */}
+      {equips.map(e => (
+        <Text key={e.slot} style={[styles.equipIcon, EQUIP_POSITIONS[e.slot] || { top: 0, right: 0 }]}>
+          {e.icon}
+        </Text>
+      ))}
       {stage === 'egg' && <Text style={styles.stageHint}>点击孵化 ✨</Text>}
     </Animated.View>
   );
@@ -92,10 +121,14 @@ export default function HomeScreen() {
   const router = useRouter();
   const {
     pet, isLoading, isInteracting, error, user,
-    todayEvent, fetchPet, interact, clearEvent, clearError, logout, fetchUser,
+    todayEvent, fetchPet, interact, clearEvent, clearError, logout, fetchUser, fetchTodayEvent,
   } = usePetStore();
+  const {
+    currentScene, equips, fetchEquips: fetchPetEquips, fetchScenes,
+  } = useInventoryStore();
 
   const [interactMessage, setInteractMessage] = useState('');
+  const eventAttempted = useRef(false); // 每次进入 app 只尝试拉取一次随机事件
 
   // 退出登录（清除 Token + 重置全局状态）
   const handleLogout = async () => {
@@ -103,12 +136,22 @@ export default function HomeScreen() {
     router.replace('/login');
   };
 
-  // 每次页面获得焦点时刷新宠物数据（解决孵化后不更新问题）
-  // 并在 app 重启后恢复用户信息（昵称/金币）
+  // 页面获得焦点时：刷新宠物 + 恢复用户信息 + 同步装扮/场景数据
+  // 孵化、购买、换装后回到首页都会走这里
   useFocusEffect(
     useCallback(() => {
-      fetchPet();
+      (async () => {
+        await fetchPet();
+        // 宠物就绪后再拉取装备（需要 petId）
+        const currentPet = usePetStore.getState().pet;
+        if (currentPet) fetchPetEquips(currentPet.id);
+      })();
       fetchUser();
+      fetchScenes();
+      if (!eventAttempted.current) {
+        eventAttempted.current = true;
+        fetchTodayEvent();
+      }
     }, [])
   );
 
@@ -140,12 +183,20 @@ export default function HomeScreen() {
             <Text style={styles.primaryBtnText}>🎁 开始孵化</Text>
           </TouchableOpacity>
         </Link>
+        <Link href="/archive" asChild>
+          <TouchableOpacity style={styles.archiveLink}>
+            <Text style={styles.archiveLinkText}>🏛️ 想念它们？去宠物档案馆看看</Text>
+          </TouchableOpacity>
+        </Link>
       </View>
     );
   }
 
+  // 家园场景背景（商城购买场景后在此生效）
+  const sceneBg = currentScene?.backgroundColor || '#FFF5F7';
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={[styles.container, { backgroundColor: sceneBg }]} contentContainerStyle={styles.content}>
       {/* 错误提示 */}
       {error && <ErrorBanner message={error} onDismiss={clearError} />}
 
@@ -180,7 +231,7 @@ export default function HomeScreen() {
       )}
 
       {/* 宠物展示区 */}
-      <PetAvatar stage={pet.stage} mood={pet.stats.mood} />
+      <PetAvatar stage={pet.stage} mood={pet.stats.mood} equips={equips} />
 
       {/* 互动反馈消息 */}
       {interactMessage ? (
@@ -201,6 +252,23 @@ export default function HomeScreen() {
       {/* 属性面板 */}
       <View style={styles.statsPanel}>
         <Text style={styles.statsTitle}>状态</Text>
+        {/* 升级进度条 */}
+        <View style={styles.expRow}>
+          <Text style={styles.expLabel}>Lv.{pet.level}</Text>
+          <View style={styles.expBarBg}>
+            <View
+              style={[
+                styles.expBarFill,
+                {
+                  width: `${Math.min(100, Math.round((pet.exp / expToNextLevel(pet.level)) * 100))}%`,
+                },
+              ]}
+            />
+          </View>
+          <Text style={styles.expValue}>
+            {pet.exp}/{expToNextLevel(pet.level)}
+          </Text>
+        </View>
         <StatBar label="🍖 饥饿" value={pet.stats.hunger} color="#FF9F43" />
         <StatBar label="🧼 清洁" value={pet.stats.cleanliness} color="#54A0FF" />
         <StatBar label="😊 心情" value={pet.stats.mood} color="#FECA57" />
@@ -274,6 +342,13 @@ const styles = StyleSheet.create({
     }),
   },
   petEmoji: { fontSize: 100 },
+  equipIcon: {
+    position: 'absolute',
+    fontSize: 26,
+    textShadowColor: 'rgba(0,0,0,0.15)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
   stageHint: { fontSize: 14, color: '#999', marginTop: 8 },
   messageBubble: {
     backgroundColor: '#FFFFFF',
@@ -314,6 +389,11 @@ const styles = StyleSheet.create({
     }),
   },
   statsTitle: { fontSize: 16, fontWeight: '600', color: '#5A4A4A', marginBottom: 12 },
+  expRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  expLabel: { width: 44, fontSize: 13, fontWeight: '700', color: '#FF9F43' },
+  expBarBg: { flex: 1, height: 10, backgroundColor: '#F0F0F0', borderRadius: 5, overflow: 'hidden', marginHorizontal: 8 },
+  expBarFill: { height: '100%', backgroundColor: '#FF9F43', borderRadius: 5 },
+  expValue: { width: 56, fontSize: 11, color: '#999', textAlign: 'right' },
   statRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   statLabel: { width: 70, fontSize: 13, color: '#777' },
   statBarBg: { flex: 1, height: 8, backgroundColor: '#F0F0F0', borderRadius: 4, overflow: 'hidden', marginHorizontal: 8 },
@@ -333,4 +413,6 @@ const styles = StyleSheet.create({
     }),
   },
   primaryBtnText: { fontSize: 16, fontWeight: '600', color: '#FFF' },
+  archiveLink: { marginTop: 20, paddingVertical: 6 },
+  archiveLinkText: { fontSize: 13, color: '#BBB' },
 });

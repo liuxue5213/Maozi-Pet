@@ -42,9 +42,10 @@ const MAX_COINS_PER_DAY = 200;
 // 每日互动次数上限（防止过度刷金币）
 const MAX_INTERACTIONS_PER_DAY = 50;
 
-// 升级曲线：每级需要 level * 80 经验（比之前的 100 更平滑）
+// 升级曲线：每级需要 level * 20 经验
+// （原 level*80 + 成年门槛 Lv.50 需要约 19600 次互动才能退休，实际走不完成长循环）
 function expToNextLevel(level: number): number {
-  return level * 80;
+  return level * 20;
 }
 
 // ============================================================
@@ -217,8 +218,9 @@ function checkGrowth(pet: PetData): { pet: PetData; leveledUp: boolean; evolved:
     leveledUp = true;
   }
 
-  // 阶段进化（等级阈值）
-  const newStage = level >= 50 ? 'adult' : level >= 25 ? 'teen' : level >= 10 ? 'child' : 'egg';
+  // 阶段进化（等级阈值）：蛋 → 3 级幼体 → 8 级少年 → 15 级成年
+  // 按新曲线约需 12 次 / 112 次 / 420 次互动，节奏数天到数周，符合"轻养成"定位
+  const newStage = level >= 15 ? 'adult' : level >= 8 ? 'teen' : level >= 3 ? 'child' : 'egg';
   if (newStage !== stage) {
     evolved = true;
     stage = newStage;
