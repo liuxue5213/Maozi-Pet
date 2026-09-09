@@ -423,6 +423,9 @@ ensureColumn('users', 'push_quiet_end', 'push_quiet_end TEXT');
 // 钻石经济（Round 15）：商品支持钻石计价（'coin' | 'diamond'），钻石只来自成就解锁
 ensureColumn('item_defs', 'currency', "currency TEXT NOT NULL DEFAULT 'coin'");
 
+// 习惯 streak 里程碑（Round 18）：每个习惯已发放过经验的里程碑天数（'3,7'），防断签重爬刷经验
+ensureColumn('user_habits', 'awarded_milestones', "awarded_milestones TEXT NOT NULL DEFAULT ''");
+
 // ============================================================
 // 初始数据：装扮物品 + 家园场景
 // ============================================================

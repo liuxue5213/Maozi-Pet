@@ -2,6 +2,20 @@
 
 > Run 日志（最新在上）
 
+## Run @2026-09-10 07:00-07:40（第三夜/日间周期 07 点轮：R18 streak 里程碑 → 宠物成长绑定）
+- **起点回归**：83 单测全绿 + 双端 typecheck + 远端同步（本地 main == origin/main）
+- **⛔ APK 交付阻塞确认（用户侧动作）**：打包路径已存在且零密钥（`.github/workflows/build-apk-gradle.yml`，workflow_dispatch 手动触发 + v* 标签，GitHub Runner 上 prebuild + assembleDebug）；但本机 `gh` CLI 未认证、`eas` 未登录、本地无 Android SDK——**无法从本机触发/取产物**。用户解锁方式（二选一）：① 本机 `gh auth login` 后 `gh workflow run build-apk-gradle.yml -f api_base_url='http://<服务器IP>:60235/api'`，产物在 Actions Artifacts（maozi-pet-debug-apk，留 30 天）；② 网页 GitHub Actions 手动 Run workflow 填入 api_base_url。另 `frontend/eas.json` preview/production 的 EXPO_PUBLIC_API_BASE_URL 仍是占位符「替换为你的服务器IP」，真机包必须填真实地址
+- **竞品依据**（06:00 收官轮扫描）：Habit-chi/Pawbit 验证「streak 驱动宠物真实进化」是习惯品类标配，我们此前 streak 只是数字外显
+- **完成 R18：习惯 streak 里程碑 → 宠物成长绑定**
+  · `utils/growth.ts`（新）：升级曲线/阶段进化抽纯函数（`expToNextLevel`/`stageForLevel`/`applyExp`），互动成长（checkGrowth 委托重构，行为不变）与习惯里程碑共用一条规则
+  · `utils/habits.ts`：`MILESTONE_DEFS` 3/7/14/21 天 → 经验 15/40/100/200（≤ 成年总需求 2100 的 25%/习惯，不破坏轻养成节奏）；`pendingMilestone`（**>= 补发语义**：无宠物/退休窗口错过发放日后自动补发，awarded 防重复）+ `nextMilestone` + `parseAwarded`/`serializeAwarded`
+  · `user_habits.awarded_milestones` 列（ensureColumn 迁移，'3,7' 格式）——每习惯每里程碑**终身一次**，断签重爬不重发（防刷经验）
+  · `routes/habits.ts`：打卡事务内发放（与心情/金币同事务）；**睡觉也发经验**（成长结算≠即时状态，已验证唤醒结算只写 stats 列不覆盖 level/exp/stage）；退休/无宠物跳过不标记；响应带 `milestone{days,exp,title,icon,petName,newLevel,leveledUp}`；GET 列表带 `nextMilestoneDays/Exp`
+  · 成就联动：4 枚新徽章（🌱三日之约/🔥七日之燃/🌟十四日星辰/👑廿一日之冠，metric=habitStreak 含归档习惯取最高）走既有徽章管线自动 **+💎5/枚** → 钻石限定颜值经济环接通
+  · 前端 habits.tsx：里程碑达成后 `fetchPet()` 同步全局宠物状态；header 里程碑说明 + 卡片「🎯 再坚持 X 天」进度行
+- **测试**：14 个新单测（habits 里程碑 6 + growth 曲线 8；growth.test.ts 注册进 test script）→ **97 全绿**；双端 typecheck ✅
+- **curl 冒烟 17/17**：回填两日打卡→今日打卡 streak=3→milestone 触发经验+15→落库→awarded='3'→重复打卡 400→habit_3 徽章解锁+💎5→成就二查幂等→**断签重爬 streak=3 不重发**→列表 nextMilestone=7；**睡觉场景**：睡觉中打卡 moodApplied=false 但里程碑照发、270+15=285→**Lv15 adult 升级进化**、唤醒结算后 level/exp/stage 不被覆盖
+
 ## Run @2026-09-10 06:00-06:30（第二夜收官轮：终局回归 + 接缝走查 + 下一夜立项）
 - **终局全量回归**：83 单测全绿 + 双端 typecheck 通过，合并树健康
 - **接缝走查最后三个并行提交**（习惯打卡 3165fbb / 钻石经济 305508b / 家具展示 8e66ed5）：首页三入口（🌱习惯/🏆成就/📋任务）齐全；习惯打卡边界处理正确（蛋阶段可打卡、`is_retired=0` 取活跃宠物、无宠物跳过心情奖励照常打卡、睡觉守卫保留）——**未发现新缺陷**，两夜对抗式互查质量闭环成立

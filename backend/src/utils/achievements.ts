@@ -32,6 +32,11 @@ export const ACHIEVEMENT_DEFS: AchievementDef[] = [
   { id: 'rich_500', title: '小有积蓄', description: '持有金币达到 500', icon: '🪙', metric: 'coins', threshold: 500 },
   { id: 'grown_adult', title: '长大成人', description: '一只宠物成长为成年', icon: '🌱', metric: 'adultPets', threshold: 1 },
   { id: 'first_retire', title: '温情养老', description: '送第一只宠物光荣退休', icon: '🌟', metric: 'retiredPets', threshold: 1 },
+  // habitStreak：全部习惯（含归档）的最高连续打卡天数（streak → 宠物成长绑定，Round 18）
+  { id: 'habit_3', title: '三日之约', description: '任意习惯连续打卡 3 天', icon: '🌱', metric: 'habitStreak', threshold: 3 },
+  { id: 'habit_7', title: '七日之燃', description: '任意习惯连续打卡 7 天', icon: '🔥', metric: 'habitStreak', threshold: 7 },
+  { id: 'habit_14', title: '十四日星辰', description: '任意习惯连续打卡 14 天', icon: '🌟', metric: 'habitStreak', threshold: 14 },
+  { id: 'habit_21', title: '廿一日之冠', description: '任意习惯连续打卡 21 天', icon: '👑', metric: 'habitStreak', threshold: 21 },
 ];
 
 const DEF_BY_METRIC = new Map<string, AchievementDef[]>();

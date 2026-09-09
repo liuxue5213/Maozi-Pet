@@ -6,14 +6,19 @@
  * DELETE /api/habits/:id     软删除（归档保留历史）
  *
  * 打卡奖励：宠物 +心情5 / 用户 +金币2（微量；每日只给前 MAX_HABITS 次打卡发币，
- * 防「打卡→归档→重建」循环刷币，后续打卡保留连续天数与心情奖励）
+ * 防「打卡→归档→重建」循环刷币，后续打卡保留连续天数与心情奖励）。
+ * streak 里程碑（3/7/14/21 天）→ 宠物经验（每习惯每里程碑终身一次，awarded_milestones 防重爬刷经验）
  */
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 import { todayStr } from '../utils/today';
-import { MAX_HABITS, CHECK_MOOD, CHECK_COINS, calcStreak } from '../utils/habits';
+import {
+  MAX_HABITS, CHECK_MOOD, CHECK_COINS, calcStreak,
+  pendingMilestone, nextMilestone, parseAwarded, serializeAwarded, MilestoneDef,
+} from '../utils/habits';
+import { applyExp } from '../utils/growth';
 
 export const habitsRouter = Router();
 
@@ -33,13 +38,17 @@ habitsRouter.get('/', authMiddleware, (req: Request, res: Response) => {
   const list = habits.map(h => {
     const days = (db.prepare('SELECT checkin_date FROM habit_checkins WHERE habit_id = ?').all(h.id) as any[])
       .map(r => r.checkin_date as string);
+    const streak = calcStreak(days, today);
+    const next = nextMilestone(streak);
     return {
       id: h.id,
       name: h.name,
       icon: h.icon,
-      streak: calcStreak(days, today),
+      streak,
       checkedToday: days.includes(today),
       totalCheckins: days.length,
+      nextMilestoneDays: next?.days ?? null,
+      nextMilestoneExp: next?.exp ?? null,
     };
   });
 
@@ -81,7 +90,7 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
   const { id } = req.params;
   const today = todayStr();
 
-  const habit = db.prepare('SELECT id, name FROM user_habits WHERE id = ? AND user_id = ? AND archived = 0').get(id, userId) as HabitRow | undefined;
+  const habit = db.prepare('SELECT id, name, awarded_milestones FROM user_habits WHERE id = ? AND user_id = ? AND archived = 0').get(id, userId) as (HabitRow & { awarded_milestones: string | null }) | undefined;
   if (!habit) {
     res.status(404).json({ error: '习惯不存在' });
     return;
@@ -92,9 +101,11 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
   let petSleeping = false;
   let petName = '';
   let streak = 0;
+  type MilestoneAward = MilestoneDef & { petName: string; newLevel: number; leveledUp: boolean };
+  let milestoneAwarded: MilestoneAward | null = null;
 
   try {
-    transaction((tx) => {
+    milestoneAwarded = transaction((tx): MilestoneAward | null => {
       const result = tx.prepare('INSERT OR IGNORE INTO habit_checkins (habit_id, user_id, checkin_date, created_at) VALUES (?, ?, ?, ?)')
         .run(id, userId, today, new Date().toISOString());
       if (result.changes === 0) {
@@ -110,7 +121,7 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
         tx.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(coinReward, userId);
       }
 
-      const pet = tx.prepare('SELECT id, name, is_sleeping, stats_mood FROM pets WHERE user_id = ? AND is_retired = 0 ORDER BY created_at DESC LIMIT 1').get(userId) as any;
+      const pet = tx.prepare('SELECT id, name, is_sleeping, stats_mood, level, exp, stage FROM pets WHERE user_id = ? AND is_retired = 0 ORDER BY created_at DESC LIMIT 1').get(userId) as any;
       if (pet) {
         petName = pet.name;
         if (pet.is_sleeping) {
@@ -125,6 +136,21 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
       const days = (tx.prepare('SELECT checkin_date FROM habit_checkins WHERE habit_id = ?').all(id) as any[])
         .map(r => r.checkin_date as string);
       streak = calcStreak(days, today);
+
+      // 里程碑 → 宠物经验（与心情/金币同事务）。睡觉也发：经验是成长结算而非即时状态，
+      // 唤醒结算只写 stats 列不覆盖 level/exp/stage；退休/无宠物时跳过且不标记，
+      // pendingMilestone 的 >= 语义保证之后打卡自动补发
+      const awarded = parseAwarded(habit.awarded_milestones);
+      const milestone = pendingMilestone(streak, awarded);
+      if (milestone && pet) {
+        const growth = applyExp(pet, milestone.exp);
+        tx.prepare('UPDATE pets SET level = ?, exp = ?, stage = ?, updated_at = ? WHERE id = ?')
+          .run(growth.level, growth.exp, growth.stage, new Date().toISOString(), pet.id);
+        awarded.add(milestone.days);
+        tx.prepare('UPDATE user_habits SET awarded_milestones = ? WHERE id = ?').run(serializeAwarded(awarded), id);
+        return { ...milestone, petName: pet.name, newLevel: growth.level, leveledUp: growth.leveledUp };
+      }
+      return null;
     });
   } catch (err: any) {
     if (err.message === 'ALREADY_CHECKED') {
@@ -138,9 +164,13 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
   if (coinReward > 0) message += ` 🪙+${coinReward}`;
   if (petMoodApplied) message += ` ${petName} 心情+${CHECK_MOOD}`;
   else if (petSleeping) message += `（${petName} 睡得正香 😴 心情奖励明天继续）`;
+  if (milestoneAwarded) {
+    message += ` 🎉 ${milestoneAwarded.icon} ${milestoneAwarded.title}达成！${milestoneAwarded.petName} 经验+${milestoneAwarded.exp}`;
+    if (milestoneAwarded.leveledUp) message += `，升到 Lv.${milestoneAwarded.newLevel}！`;
+  }
 
   const coins = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any)?.coins ?? 0;
-  res.json({ message, streak, coinReward, petMoodApplied, totalCoins: coins });
+  res.json({ message, streak, coinReward, petMoodApplied, totalCoins: coins, milestone: milestoneAwarded });
 });
 
 // 删除习惯（软删除：归档保留打卡历史，防 streak 口径断裂）

@@ -19,6 +19,7 @@ import {
   guessWinCoins, isGuessNumber, newSecret,
   GUESS_MAX_ATTEMPTS, GUESS_MAX_GAMES_PER_DAY,
 } from '../utils/guess';
+import { applyExp } from '../utils/growth';
 
 export const petRouter = Router();
 
@@ -54,11 +55,8 @@ const MAX_COINS_PER_DAY = 200;
 // 每日互动次数上限（防止过度刷金币）
 const MAX_INTERACTIONS_PER_DAY = 50;
 
-// 升级曲线：每级需要 level * 20 经验
-// （原 level*80 + 成年门槛 Lv.50 需要约 19600 次互动才能退休，实际走不完成长循环）
-function expToNextLevel(level: number): number {
-  return level * 20;
-}
+// 升级曲线移至 utils/growth（每级 level * 20 经验；原 level*80 + 成年门槛 Lv.50
+// 需要约 19600 次互动才能退休，实际走不完成长循环）
 
 // ============================================================
 // 类型
@@ -228,36 +226,12 @@ function applyInteraction(pet: PetData, action: string): { pet: PetData; message
 }
 
 // ============================================================
-// 成长计算（修复后的经验值逻辑）
+// 成长计算（升级/进化规则抽到 utils/growth 供习惯里程碑共用）
 // ============================================================
 
 function checkGrowth(pet: PetData): { pet: PetData; leveledUp: boolean; evolved: boolean } {
-  let exp = pet.exp + EXP_PER_INTERACTION;
-  let level = pet.level;
-  let leveledUp = false;
-  let evolved = false;
-  let stage = pet.stage;
-
-  // 检查是否可以升级
-  while (exp >= expToNextLevel(level)) {
-    exp -= expToNextLevel(level);
-    level++;
-    leveledUp = true;
-  }
-
-  // 阶段进化（等级阈值）：蛋 → 3 级幼体 → 8 级少年 → 15 级成年
-  // 按新曲线约需 12 次 / 112 次 / 420 次互动，节奏数天到数周，符合"轻养成"定位
-  const newStage = level >= 15 ? 'adult' : level >= 8 ? 'teen' : level >= 3 ? 'child' : 'egg';
-  if (newStage !== stage) {
-    evolved = true;
-    stage = newStage;
-  }
-
-  return {
-    pet: { ...pet, exp, level, stage },
-    leveledUp,
-    evolved,
-  };
+  const result = applyExp(pet, EXP_PER_INTERACTION);
+  return { pet: { ...pet, ...result }, leveledUp: result.leveledUp, evolved: result.evolved };
 }
 
 // ============================================================

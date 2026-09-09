@@ -24,6 +24,14 @@ interface Habit {
   streak: number;
   checkedToday: boolean;
   totalCheckins: number;
+  nextMilestoneDays: number | null;
+  nextMilestoneExp: number | null;
+}
+
+interface CheckResult {
+  message: string;
+  totalCoins: number;
+  milestone: { days: number; exp: number; title: string; icon: string; petName: string; newLevel: number; leveledUp: boolean } | null;
 }
 
 const ICON_CHOICES = ['🌱', '💧', '🏃', '📚', '🧘', '🌅', '🥗', '😴'];
@@ -87,11 +95,15 @@ export default function HabitsScreen() {
     if (habit.checkedToday || busy) return;
     setBusy(true);
     try {
-      const result = await apiFetch<{ message: string; totalCoins: number }>(`/habits/${habit.id}/check`, {
+      const result = await apiFetch<CheckResult>(`/habits/${habit.id}/check`, {
         method: 'POST',
       });
       flash(result.message);
       updateCoins(result.totalCoins);
+      // 里程碑达成：宠物经验/等级变化，刷新全局宠物状态（首页属性同步）
+      if (result.milestone) {
+        await usePetStore.getState().fetchPet();
+      }
       await load();
     } catch (err: any) {
       flash(err.message || '打卡失败');
@@ -134,6 +146,7 @@ export default function HabitsScreen() {
         <Text style={styles.headerTitle}>习惯打卡</Text>
         <Text style={styles.headerSubtitle}>坚持现实中的好习惯，帽子陪你一起成长</Text>
         <Text style={styles.headerReward}>每次打卡：宠物 +5 心情 · 你 +2 金币</Text>
+        <Text style={styles.headerMilestone}>🎯 连续 3 / 7 / 14 / 21 天解锁里程碑，宠物经验大礼 + 成就徽章 +💎</Text>
       </View>
 
       {message !== '' && (
@@ -161,6 +174,11 @@ export default function HabitsScreen() {
                   <Text style={styles.habitMeta}>
                     {habit.streak > 0 ? `🔥 连续 ${habit.streak} 天` : '今天还没打卡'} · 累计 {habit.totalCheckins} 次
                   </Text>
+                  {habit.nextMilestoneDays !== null && (
+                    <Text style={styles.habitMilestone}>
+                      🎯 再坚持 {habit.nextMilestoneDays - habit.streak} 天得里程碑（宠物经验+{habit.nextMilestoneExp}）
+                    </Text>
+                  )}
                 </View>
               </View>
               <View style={styles.habitActions}>
@@ -225,6 +243,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, fontWeight: '700', color: '#5A4A4A' },
   headerSubtitle: { fontSize: 13, color: '#999', marginTop: 6 },
   headerReward: { fontSize: 12, color: '#B08D57', marginTop: 8, fontWeight: '600' },
+  headerMilestone: { fontSize: 11, color: '#7A9A6A', marginTop: 4, fontWeight: '600' },
   toast: {
     backgroundColor: '#E8F5E9',
     borderRadius: 12,
@@ -259,6 +278,7 @@ const styles = StyleSheet.create({
   habitIcon: { fontSize: 26 },
   habitName: { fontSize: 15, fontWeight: '700', color: '#5A4A4A' },
   habitMeta: { fontSize: 12, color: '#A89888', marginTop: 3 },
+  habitMilestone: { fontSize: 11, color: '#7A9A6A', marginTop: 2, fontWeight: '600' },
   habitActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   checkBtn: {
     backgroundColor: '#E8A87C',
