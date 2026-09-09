@@ -123,8 +123,9 @@ aiRouter.post('/chat', authMiddleware, async (req: Request, res: Response) => {
       }
     }
 
-    // --- 构建 Prompt ---
-    const systemPrompt = buildSystemPrompt(personality, req.body.petState, petInfo);
+    // --- 构建 Prompt（注入关于主人的记忆，实现个性化陪伴）---
+    const memories = petId ? getMemories(userId, petId, 10) : [];
+    const systemPrompt = buildSystemPrompt(personality, req.body.petState, petInfo, memories);
 
     // --- 调用 AI（带超时），失败时用本地回复兜底 ---
     let aiResponse: string;
@@ -152,6 +153,9 @@ aiRouter.post('/chat', authMiddleware, async (req: Request, res: Response) => {
 
       // 清理过期历史（只保留最近 100 条）
       cleanupOldMessages(userId, petId);
+
+      // 从用户消息中提取值得记住的事实（静默进行，失败不影响对话）
+      extractMemories(userId, petId, lastMessage.content);
     }
 
     res.json({ reply: aiResponse, timestamp: new Date().toISOString() });
@@ -182,6 +186,41 @@ aiRouter.get('/history/:petId', authMiddleware, (req: Request, res: Response) =>
   `).all(userId, petId, limit);
 
   res.json({ messages: (messages as any[]).reverse() });
+});
+
+// --- 查看宠物记得的事 ---
+aiRouter.get('/memories/:petId', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { petId } = req.params;
+  const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 50, 1), 50);
+
+  const rows = db.prepare(`
+    SELECT id, content, created_at FROM pet_memories
+    WHERE user_id = ? AND pet_id = ?
+    ORDER BY created_at DESC, id DESC
+    LIMIT ?
+  `).all(userId, petId, limit);
+
+  res.json({ memories: rows });
+});
+
+// --- 遗忘一条记忆 ---
+aiRouter.delete('/memories/:petId/:memoryId', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { petId, memoryId } = req.params;
+  const id = parseInt(memoryId, 10);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: '无效的记忆 ID' });
+    return;
+  }
+
+  const result = db.prepare('DELETE FROM pet_memories WHERE id = ? AND user_id = ? AND pet_id = ?')
+    .run(id, userId, petId);
+  if (result.changes === 0) {
+    res.status(404).json({ error: '记忆不存在' });
+    return;
+  }
+  res.json({ message: '已忘记这件事' });
 });
 
 // --- 随机事件生成 ---
@@ -223,9 +262,9 @@ aiRouter.post('/event', authMiddleware, async (req: Request, res: Response) => {
 // 内部函数
 // ============================================================
 
-function buildSystemPrompt(personality: string, petState?: any, petInfo?: any): string {
+function buildSystemPrompt(personality: string, petState?: any, petInfo?: any, memories: string[] = []): string {
   const base = PERSONALITY_PROMPTS[personality] || PERSONALITY_PROMPTS.cute;
-  if (!petState) return base;
+  if (!petState && memories.length === 0) return base;
 
   const stageNames: Record<string, string> = {
     egg: '宠物蛋',
@@ -247,29 +286,44 @@ function buildSystemPrompt(personality: string, petState?: any, petInfo?: any): 
     if (petInfo.totalInteractions) lines.push(`- 与主人互动次数: ${petInfo.totalInteractions}`);
   }
 
-  // 当前状态
-  lines.push('');
-  lines.push('【当前状态】');
-  lines.push(`- 饥饿值: ${petState.hunger ?? 80}/100`);
-  lines.push(`- 清洁值: ${petState.cleanliness ?? 80}/100`);
-  lines.push(`- 心情值: ${petState.mood ?? 80}/100`);
-  lines.push(`- 体力值: ${petState.energy ?? 80}/100`);
-  lines.push(`- 健康值: ${petState.health ?? 80}/100`);
-
-  // 状态提示
-  const tips: string[] = [];
-  if (petState.hunger < 30) tips.push('⚠️ 非常饿，需要喂食');
-  if (petState.cleanliness < 30) tips.push('⚠️ 很脏，需要清洁');
-  if (petState.mood < 30) tips.push('⚠️ 心情低落，需要安慰');
-  if (petState.energy < 30) tips.push('⚠️ 很累，需要休息');
-  if (tips.length > 0) {
+  // 关于主人的记忆（个性化陪伴的核心：宠物真的记得主人的事）
+  if (memories.length > 0) {
     lines.push('');
-    lines.push('【状态提醒】');
-    tips.forEach(t => lines.push(t));
+    lines.push('【关于主人的记忆】（你亲身记得这些事，聊天时可自然提及，不要罗列）');
+    memories.forEach(m => lines.push(`- ${m}`));
   }
 
-  lines.push('');
-  lines.push('请根据以上设定和状态调整对话语气、内容和行为（饿了就说饿，困了就犯懒，心情低落就安慰等）');
+  // 当前状态（petState 与记忆相互独立，任一存在即可构建）
+  if (petState) {
+    lines.push('');
+    lines.push('【当前状态】');
+    lines.push(`- 饥饿值: ${petState.hunger ?? 80}/100`);
+    lines.push(`- 清洁值: ${petState.cleanliness ?? 80}/100`);
+    lines.push(`- 心情值: ${petState.mood ?? 80}/100`);
+    lines.push(`- 体力值: ${petState.energy ?? 80}/100`);
+    lines.push(`- 健康值: ${petState.health ?? 80}/100`);
+  }
+
+  // 当前状态
+  // 状态提示
+  const tips: string[] = [];
+  if (petState) {
+    if (petState.hunger < 30) tips.push('⚠️ 非常饿，需要喂食');
+    if (petState.cleanliness < 30) tips.push('⚠️ 很脏，需要清洁');
+    if (petState.mood < 30) tips.push('⚠️ 心情低落，需要安慰');
+    if (petState.energy < 30) tips.push('⚠️ 很累，需要休息');
+    if (tips.length > 0) {
+      lines.push('');
+      lines.push('【状态提醒】');
+      tips.forEach(t => lines.push(t));
+    }
+
+    lines.push('');
+    lines.push('请根据以上设定和状态调整对话语气、内容和行为（饿了就说饿，困了就犯懒，心情低落就安慰等）');
+  } else {
+    lines.push('');
+    lines.push('请结合记忆自然聊天，语气符合你的性格设定');
+  }
 
   return lines.join('\n');
 }
@@ -379,6 +433,71 @@ function cleanupOldMessages(userId: string, petId: string): void {
       ORDER BY created_at DESC LIMIT 100
     )
   `).run(userId, petId, userId, petId);
+}
+
+// ============================================================
+// 宠物记忆（个性化陪伴核心：从对话提取事实，注入人设）
+// ============================================================
+
+const MAX_MEMORIES_PER_PET = 50;
+
+/** 正则提取用户主动告知的事实；返回规范化的记忆文本列表 */
+function extractMemories(userId: string, petId: string, text: string): void {
+  try {
+    const t = text.trim().slice(0, MAX_MESSAGE_LENGTH);
+    if (!t) return;
+    const facts: string[] = [];
+
+    const name = /(?:我叫|我的名字(?:是|叫)|叫我)\s*([\u4e00-\u9fa5a-zA-Z0-9·]{1,12})/.exec(t);
+    if (name) facts.push(`主人叫${name[1]}`);
+
+    const like = /我喜欢\s*([\u4e00-\u9fa5a-zA-Z0-9]{1,12})/.exec(t);
+    if (like) facts.push(`主人喜欢${like[1]}`);
+
+    const hate = /我(?:讨厌|不喜欢|不爱)\s*([\u4e00-\u9fa5a-zA-Z0-9]{1,12})/.exec(t);
+    if (hate) facts.push(`主人讨厌${hate[1]}`);
+
+    const birthday = /我(?:的)?生日(?:是|在)?\s*([\d年月日]{4,12})/.exec(t);
+    if (birthday) facts.push(`主人的生日是${birthday[1]}`);
+
+    const todo = /记住[:：,，。\s]+(.{2,40})/.exec(t);
+    if (todo) facts.push(`主人的叮嘱：${todo[1].trim()}`);
+
+    const job = /我在(学习|研究|做|干)\s*([\u4e00-\u9fa5a-zA-Z0-9]{1,10})/.exec(t);
+    if (job) facts.push(`主人在${job[1]}${job[2]}`);
+
+    for (const fact of facts) addMemory(userId, petId, fact);
+  } catch {
+    // 记忆提取失败不影响对话主流程
+  }
+}
+
+function addMemory(userId: string, petId: string, content: string): void {
+  const now = new Date().toISOString();
+  const inserted = db.prepare(`
+    INSERT OR IGNORE INTO pet_memories (user_id, pet_id, content, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(userId, petId, content, now);
+  if (inserted.changes === 0) return; // 重复内容，忽略
+
+  // 超上限时 FIFO 清理最旧的
+  db.prepare(`
+    DELETE FROM pet_memories
+    WHERE user_id = ? AND pet_id = ?
+    AND id NOT IN (
+      SELECT id FROM pet_memories WHERE user_id = ? AND pet_id = ?
+      ORDER BY created_at DESC, id DESC LIMIT ?
+    )
+  `).run(userId, petId, userId, petId, MAX_MEMORIES_PER_PET);
+}
+
+function getMemories(userId: string, petId: string, limit: number): string[] {
+  return (db.prepare(`
+    SELECT content FROM pet_memories
+    WHERE user_id = ? AND pet_id = ?
+    ORDER BY created_at DESC, id DESC
+    LIMIT ?
+  `).all(userId, petId, limit) as any[]).map(r => r.content);
 }
 
 // ============================================================

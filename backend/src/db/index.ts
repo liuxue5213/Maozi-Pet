@@ -284,6 +284,19 @@ db.exec(`
     FOREIGN KEY (scene_id) REFERENCES home_scenes(id) ON DELETE CASCADE,
     PRIMARY KEY (user_id, scene_id)
   );
+
+  -- 宠物记忆（AI 对话中提取的关于主人的事实，注入人设实现个性化）
+  CREATE TABLE IF NOT EXISTS pet_memories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    pet_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (pet_id) REFERENCES pets(id) ON DELETE CASCADE,
+    UNIQUE(user_id, pet_id, content)
+  );
+  CREATE INDEX IF NOT EXISTS idx_memories_pet ON pet_memories(pet_id, created_at);
 `);
 
 // ============================================================
