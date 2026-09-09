@@ -5,7 +5,8 @@
  * POST /api/habits/:id/check 今日打卡（幂等，UNIQUE 主键防并发重复）
  * DELETE /api/habits/:id     软删除（归档保留历史）
  *
- * 打卡奖励：宠物 +心情5 / 用户 +金币2（微量，不与互动 200 预算互通）
+ * 打卡奖励：宠物 +心情5 / 用户 +金币2（微量；每日只给前 MAX_HABITS 次打卡发币，
+ * 防「打卡→归档→重建」循环刷币，后续打卡保留连续天数与心情奖励）
  */
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
@@ -101,8 +102,13 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
       }
 
       // 打卡记录落库后：宠物 +心情（睡觉中不扰动心情，退休宠物无奖励对象）、用户 +金币
-      coinReward = CHECK_COINS;
-      tx.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(coinReward, userId);
+      // 金币每日只发前 MAX_HABITS 次（归档重建 3 个新习惯再打卡也拿不到第 4 份金币）
+      const todayCount = (tx.prepare('SELECT COUNT(*) AS n FROM habit_checkins WHERE user_id = ? AND checkin_date = ?')
+        .get(userId, today) as any).n;
+      coinReward = todayCount <= MAX_HABITS ? CHECK_COINS : 0;
+      if (coinReward > 0) {
+        tx.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(coinReward, userId);
+      }
 
       const pet = tx.prepare('SELECT id, name, is_sleeping, stats_mood FROM pets WHERE user_id = ? AND is_retired = 0 ORDER BY created_at DESC LIMIT 1').get(userId) as any;
       if (pet) {
@@ -128,7 +134,8 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
     throw err;
   }
 
-  let message = `✅ 「${habit.name}」打卡成功 🔥 连续 ${streak} 天 🪙+${coinReward}`;
+  let message = `✅ 「${habit.name}」打卡成功 🔥 连续 ${streak} 天`;
+  if (coinReward > 0) message += ` 🪙+${coinReward}`;
   if (petMoodApplied) message += ` ${petName} 心情+${CHECK_MOOD}`;
   else if (petSleeping) message += `（${petName} 睡得正香 😴 心情奖励明天继续）`;
 
