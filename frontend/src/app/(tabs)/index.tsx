@@ -757,6 +757,13 @@ export default function HomeScreen() {
         </View>
       )}
 
+      {/* 习惯打卡入口 */}
+      <Link href="/habits" asChild>
+        <TouchableOpacity style={styles.achievementEntry}>
+          <Text style={styles.achievementEntryText}>🌱 习惯打卡</Text>
+        </TouchableOpacity>
+      </Link>
+
       {/* 成就徽章入口 */}
       <Link href="/achievements" asChild>
         <TouchableOpacity style={styles.achievementEntry}>
