@@ -34,6 +34,7 @@ interface ShopItem {
   icon: string;
   description: string;
   priceCoins: number;
+  currency: 'coin' | 'diamond';
   rarity: 'common' | 'rare' | 'epic';
   isLimited: boolean;
   owned: boolean;
@@ -54,6 +55,7 @@ interface CheckinStatus {
 export default function ShopScreen() {
   const router = useRouter();
   const updateCoins = usePetStore(s => s.updateCoins);
+  const updateDiamonds = usePetStore(s => s.updateDiamonds);
   const [items, setItems] = useState<ShopItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [checkin, setCheckin] = useState<CheckinStatus | null>(null);
@@ -129,11 +131,12 @@ export default function ShopScreen() {
     setConfirmItem(null);
 
     try {
-      const result = await apiFetch<{ message: string; coinsLeft: number }>(`/shop/buy/${itemId}`, {
+      const result = await apiFetch<{ message: string; currency: 'coin' | 'diamond'; coinsLeft: number; diamondsLeft: number }>(`/shop/buy/${itemId}`, {
         method: 'POST',
       });
       showMessage(result.message);
       updateCoins(result.coinsLeft);
+      updateDiamonds(result.diamondsLeft);
       await fetchItems();
     } catch (err: any) {
       showMessage(err.message);
@@ -264,10 +267,12 @@ export default function ShopScreen() {
                 </View>
               ) : (
                 <TouchableOpacity
-                  style={styles.buyBtn}
+                  style={[styles.buyBtn, item.currency === 'diamond' && styles.buyBtnDiamond]}
                   onPress={() => handleBuyPress(item)}
                 >
-                  <Text style={styles.buyBtnText}>🪙 {item.priceCoins}</Text>
+                  <Text style={styles.buyBtnText}>
+                    {item.currency === 'diamond' ? '💎' : '🪙'} {item.priceCoins}
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -287,7 +292,11 @@ export default function ShopScreen() {
               <Text style={styles.confirmIcon}>{confirmItem.icon}</Text>
               <Text style={styles.confirmTitle}>确认购买</Text>
               <Text style={styles.confirmName}>{confirmItem.name}</Text>
-              <Text style={styles.confirmPrice}>🪙 {confirmItem.priceCoins} 金币</Text>
+              <Text style={styles.confirmPrice}>
+                {confirmItem.currency === 'diamond'
+                  ? `💎 ${confirmItem.priceCoins} 钻石`
+                  : `🪙 ${confirmItem.priceCoins} 金币`}
+              </Text>
               <View style={styles.confirmActions}>
                 <TouchableOpacity style={styles.confirmCancel} onPress={() => setConfirmItem(null)}>
                   <Text style={styles.confirmCancelText}>取消</Text>
@@ -439,6 +448,7 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
   },
+  buyBtnDiamond: { backgroundColor: '#5DC2E0' },
   buyBtnText: { fontSize: 13, fontWeight: '700', color: '#FFF' },
   ownedBadge: {
     marginTop: 10,

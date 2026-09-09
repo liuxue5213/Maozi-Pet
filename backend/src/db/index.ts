@@ -402,6 +402,9 @@ ensureColumn('pets', 'sleep_started_at', 'sleep_started_at TEXT');
 ensureColumn('users', 'push_quiet_start', 'push_quiet_start TEXT');
 ensureColumn('users', 'push_quiet_end', 'push_quiet_end TEXT');
 
+// 钻石经济（Round 15）：商品支持钻石计价（'coin' | 'diamond'），钻石只来自成就解锁
+ensureColumn('item_defs', 'currency', "currency TEXT NOT NULL DEFAULT 'coin'");
+
 // ============================================================
 // 初始数据：装扮物品 + 家园场景
 // ============================================================
@@ -465,6 +468,11 @@ const ITEM_DEFS = [
   { id: 'fur_bookshelf', name: '小书架', category: 'furniture', icon: '📚', description: '陪你读书', price_coins: 100, rarity: 'rare', shop_category: 'furniture', sort_order: 41 },
   { id: 'fur_sofa', name: '小沙发', category: 'furniture', icon: '🛋️', description: '一起瘫着', price_coins: 120, rarity: 'rare', shop_category: 'furniture', sort_order: 42 },
   { id: 'fur_guitar', name: '小吉他', category: 'furniture', icon: '🎸', description: '偶尔弹一首', price_coins: 150, rarity: 'epic', shop_category: 'furniture', sort_order: 43 },
+
+  // === 钻石专属（currency=diamond：钻石只来自成就解锁，限定颜值不卖数值） ===
+  { id: 'frame_aurora', name: '极光框', category: 'frame', icon: '🌌', description: '成就达人的荣耀徽记', price_coins: 30, rarity: 'epic', shop_category: 'frame', sort_order: 44, currency: 'diamond' },
+  { id: 'skin_gold', name: '黄金猫', category: 'skin', icon: '🟡', description: '闪耀的黄金皮毛', price_coins: 50, rarity: 'epic', shop_category: 'skin', sort_order: 45, currency: 'diamond' },
+  { id: 'bubble_night', name: '星夜气泡', category: 'bubble', icon: '🌃', description: '把星空装进对话里', price_coins: 20, rarity: 'rare', shop_category: 'bubble', sort_order: 46, currency: 'diamond' },
 ];
 
 // 家园场景
@@ -478,11 +486,11 @@ const HOME_SCENES = [
 
 // 商品插入（幂等）
 const insertItem = db.prepare(`
-  INSERT OR IGNORE INTO item_defs (id, name, category, icon, description, price_coins, rarity, is_limited, shop_category, sort_order)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT OR IGNORE INTO item_defs (id, name, category, icon, description, price_coins, rarity, is_limited, shop_category, sort_order, currency)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 ITEM_DEFS.forEach(item => {
-  insertItem.run(item.id, item.name, item.category, item.icon, item.description, item.price_coins, item.rarity, item.is_limited || 0, item.shop_category, item.sort_order);
+  insertItem.run(item.id, item.name, item.category, item.icon, item.description, item.price_coins, item.rarity, item.is_limited || 0, item.shop_category, item.sort_order, item.currency || 'coin');
 });
 
 // 家园场景插入（幂等）

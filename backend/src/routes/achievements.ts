@@ -6,7 +6,7 @@
 import { Router, Request, Response } from 'express';
 import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
-import { ACHIEVEMENT_DEFS, evaluateAchievements, diffNewlyUnlocked, AchievementMetrics } from '../utils/achievements';
+import { ACHIEVEMENT_DEFS, evaluateAchievements, diffNewlyUnlocked, AchievementMetrics, DIAMOND_PER_ACHIEVEMENT } from '../utils/achievements';
 
 export const achievementsRouter = Router();
 
@@ -40,14 +40,17 @@ achievementsRouter.get('/', authMiddleware, (req: Request, res: Response) => {
     .all(userId) as any[]).map(r => r.achievement_id);
   const newly = diffNewlyUnlocked(achieved, existing);
 
-  // 持久化新解锁（事务；键冲突静默跳过）
+  // 持久化新解锁（事务；键冲突静默跳过）+ 每枚新徽章发钻石（与持久化同事务，防解锁成功发币失败）
+  let diamondsEarned = 0;
   if (newly.length > 0) {
     const now = new Date().toISOString();
+    diamondsEarned = newly.length * DIAMOND_PER_ACHIEVEMENT;
     transaction((tx) => {
       for (const id of newly) {
         tx.prepare('INSERT OR IGNORE INTO user_achievements (user_id, achievement_id, unlocked_at) VALUES (?, ?, ?)')
           .run(userId, id, now);
       }
+      tx.prepare('UPDATE users SET diamonds = diamonds + ? WHERE id = ?').run(diamondsEarned, userId);
     });
   }
 
@@ -64,6 +67,7 @@ achievementsRouter.get('/', authMiddleware, (req: Request, res: Response) => {
     unlockedCount: unlockedMap.size,
     totalCount: ACHIEVEMENT_DEFS.length,
     newCount: newly.length,
+    diamondsEarned,
     metrics,
   });
 });

@@ -28,6 +28,8 @@ export default function AchievementsScreen() {
   const [achievements, setAchievements] = useState<Achievement[] | null>(null);
   const [unlockedCount, setUnlockedCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  // 本次进入页面新解锁的徽章数与钻石奖励（成就 → 钻石 → 限定颜值 的经济闭环）
+  const [reward, setReward] = useState<{ newCount: number; diamonds: number } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -37,10 +39,13 @@ export default function AchievementsScreen() {
             achievements: Achievement[];
             unlockedCount: number;
             totalCount: number;
+            newCount: number;
+            diamondsEarned: number;
           }>('/achievements');
           setAchievements(result.achievements);
           setUnlockedCount(result.unlockedCount);
           setTotalCount(result.totalCount);
+          setReward(result.newCount > 0 ? { newCount: result.newCount, diamonds: result.diamondsEarned } : null);
         } catch {
           setAchievements([]);
         }
@@ -54,8 +59,15 @@ export default function AchievementsScreen() {
         <Text style={styles.headerEmoji}>🏆</Text>
         <Text style={styles.headerTitle}>成就徽章</Text>
         <Text style={styles.headerSubtitle}>
-          {achievements === null ? '清点中...' : `已收集 ${unlockedCount}/${totalCount} 枚徽章`}
+          {achievements === null ? '清点中...' : `已收集 ${unlockedCount}/${totalCount} 枚徽章 · 每枚奖励 💎5`}
         </Text>
+        {reward && (
+          <View style={styles.rewardBanner}>
+            <Text style={styles.rewardText}>
+              🎉 新解锁 {reward.newCount} 枚徽章，+💎{reward.diamonds} 已入账！
+            </Text>
+          </View>
+        )}
       </View>
 
       {achievements === null ? (
@@ -89,6 +101,14 @@ const styles = StyleSheet.create({
   headerEmoji: { fontSize: 48, marginBottom: 8 },
   headerTitle: { fontSize: 24, fontWeight: '700', color: '#5A4A4A' },
   headerSubtitle: { fontSize: 13, color: '#999', marginTop: 6 },
+  rewardBanner: {
+    marginTop: 10,
+    backgroundColor: '#E8F8F5',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 14,
+  },
+  rewardText: { fontSize: 13, color: '#5A7A6A', fontWeight: '600' },
   loadingText: { textAlign: 'center', color: '#999', marginTop: 30 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'center' },
   badgeCard: {

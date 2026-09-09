@@ -14,6 +14,9 @@ export interface AchievementDef {
   threshold: number;
 }
 
+/** 每枚新解锁徽章发放的钻石（钻石专属商城商品的唯一获取渠道） */
+export const DIAMOND_PER_ACHIEVEMENT = 5;
+
 /** 成就定义（metric 与 collectMetrics() 的键一一对应） */
 export const ACHIEVEMENT_DEFS: AchievementDef[] = [
   { id: 'first_meet', title: '初次见面', description: '完成第一次互动', icon: '🐾', metric: 'interactions', threshold: 1 },

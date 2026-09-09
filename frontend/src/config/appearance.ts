@@ -14,6 +14,7 @@ export const SKIN_RING_COLORS: Record<string, string> = {
   skin_calico: '#FFB347', // 三花 · 橘黄
   skin_white: '#E8E8E8', // 纯白 · 浅灰（纯白底上仍可见）
   skin_black: '#4A4A4A', // 黑猫 · 墨色
+  skin_gold: '#D4AF37', // 黄金猫 · 金（钻石专属）
 };
 
 // 头像框 → 头像描边色
@@ -23,6 +24,7 @@ export const FRAME_RING_COLORS: Record<string, string> = {
   frame_flame: '#FF6B35',
   frame_diamond: '#5DC2E0',
   frame_rainbow: '#B39DDB',
+  frame_aurora: '#7B68EE', // 极光 · 紫绿渐变近似（钻石专属）
 };
 
 // 聊天气泡 → 宠物消息气泡配色
@@ -36,6 +38,7 @@ export const BUBBLE_STYLES: Record<string, BubbleStyle> = {
   bubble_star: { backgroundColor: '#FFF6D9', borderColor: '#F5DE9C' },
   bubble_cat: { backgroundColor: '#F3EBE1', borderColor: '#D9C4AC' },
   bubble_heart: { backgroundColor: '#FFE8E8', borderColor: '#F5B5B5' },
+  bubble_night: { backgroundColor: '#E8EAF9', borderColor: '#9FA8DA' }, // 星夜 · 浅紫蓝（钻石专属）
 };
 
 // 从已装备列表中取指定槽位的 itemId

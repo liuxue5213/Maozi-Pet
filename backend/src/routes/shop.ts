@@ -151,6 +151,7 @@ shopRouter.get('/items', authMiddleware, (req: Request, res: Response) => {
     icon: item.icon,
     description: item.description,
     priceCoins: item.price_coins,
+    currency: item.currency === 'diamond' ? 'diamond' : 'coin',
     rarity: item.rarity,
     isLimited: !!item.is_limited,
     owned: ownedSet.has(item.id),
@@ -172,7 +173,7 @@ shopRouter.get('/items', authMiddleware, (req: Request, res: Response) => {
   });
 });
 
-// 购买商品
+// 购买商品（支持金币/钻石双币种；钻石只来自成就解锁，仅用于限定颜值）
 shopRouter.post('/buy/:itemId', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
   const { itemId } = req.params;
@@ -183,9 +184,18 @@ shopRouter.post('/buy/:itemId', authMiddleware, (req: Request, res: Response) =>
     return;
   }
 
-  const user = db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any;
+  const isDiamond = item.currency === 'diamond';
+  const user = db.prepare('SELECT coins, diamonds FROM users WHERE id = ?').get(userId) as any;
 
-  if (user.coins < item.price_coins) {
+  if (isDiamond && user.diamonds < item.price_coins) {
+    res.status(400).json({
+      error: '钻石不足（解锁成就可获得 💎）',
+      needDiamonds: item.price_coins,
+      haveDiamonds: user.diamonds,
+    });
+    return;
+  }
+  if (!isDiamond && user.coins < item.price_coins) {
     res.status(400).json({
       error: '金币不足',
       needCoins: item.price_coins,
@@ -197,14 +207,17 @@ shopRouter.post('/buy/:itemId', authMiddleware, (req: Request, res: Response) =>
   const existing = db.prepare('SELECT id FROM user_items WHERE user_id = ? AND item_id = ?').get(userId, itemId);
 
   // 用事务保证：扣币 + 发货 原子操作
-  // 扣款用条件更新（coins >= 价格）兜底，防止并发请求把余额刷成负数
+  // 扣款用条件更新（余额 >= 价格）兜底，防止并发请求把余额刷成负数
   const now = new Date().toISOString();
   try {
     transaction((tx) => {
-      const deduct = tx.prepare('UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?')
-        .run(item.price_coins, userId, item.price_coins);
+      const deduct = isDiamond
+        ? tx.prepare('UPDATE users SET diamonds = diamonds - ? WHERE id = ? AND diamonds >= ?')
+            .run(item.price_coins, userId, item.price_coins)
+        : tx.prepare('UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?')
+            .run(item.price_coins, userId, item.price_coins);
       if (deduct.changes === 0) {
-        throw new Error('INSUFFICIENT_COINS');
+        throw new Error(isDiamond ? 'INSUFFICIENT_DIAMONDS' : 'INSUFFICIENT_COINS');
       }
 
       if (existing) {
@@ -219,14 +232,20 @@ shopRouter.post('/buy/:itemId', authMiddleware, (req: Request, res: Response) =>
       res.status(400).json({ error: '金币不足', needCoins: item.price_coins });
       return;
     }
+    if (err.message === 'INSUFFICIENT_DIAMONDS') {
+      res.status(400).json({ error: '钻石不足（解锁成就可获得 💎）', needDiamonds: item.price_coins });
+      return;
+    }
     throw err;
   }
 
-  const newBalance = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any).coins;
+  const balance = db.prepare('SELECT coins, diamonds FROM users WHERE id = ?').get(userId) as any;
 
   res.json({
     message: `🎉 成功购买 ${item.name}！`,
     item: { id: item.id, name: item.name, icon: item.icon, category: item.category },
-    coinsLeft: newBalance,
+    currency: isDiamond ? 'diamond' : 'coin',
+    coinsLeft: balance.coins,
+    diamondsLeft: balance.diamonds,
   });
 });

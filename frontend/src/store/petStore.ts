@@ -99,6 +99,7 @@ interface PetState {
   // --- Auth Actions ---
   setAuth: (user: UserInfo) => void;
   updateCoins: (coins: number) => void;
+  updateDiamonds: (diamonds: number) => void;
   fetchUser: () => Promise<void>;
   logout: () => Promise<void>;
 
@@ -142,6 +143,11 @@ export const usePetStore = create<PetState>((set, get) => ({
   // 金币变动后同步（互动奖励、购买、签到等场景）
   updateCoins: (coins: number) => {
     set(state => ({ user: state.user ? { ...state.user, coins } : state.user }));
+  },
+
+  // 钻石变动后同步（成就解锁入账、钻石专属购买等场景）
+  updateDiamonds: (diamonds: number) => {
+    set(state => ({ user: state.user ? { ...state.user, diamonds } : state.user }));
   },
 
   // 从服务器拉取当前用户信息（app 重启后恢复全局用户状态）
