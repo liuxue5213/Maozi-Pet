@@ -82,7 +82,7 @@ function VisitModal({
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
       <View style={styles.modalContainer}>
         <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>{friend.nickname} 的家园</Text>
+          <Text style={styles.modalTitle}>{friend.nickname} 的家园{!!friend.habitStreak && friend.habitStreak >= 2 ? ` 🔥${friend.habitStreak}` : ''}</Text>
           <TouchableOpacity onPress={onClose}>
             <Text style={styles.modalClose}>✕</Text>
           </TouchableOpacity>

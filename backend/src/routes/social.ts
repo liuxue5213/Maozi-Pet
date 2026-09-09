@@ -8,8 +8,25 @@ import { v4 as uuidv4 } from 'uuid';
 import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 import { todayStr } from '../utils/today';
+import { calcStreak } from '../utils/habits';
 
 export const socialRouter = Router();
+
+/**
+ * 用户活跃习惯的最高 streak（社交外显用）。
+ * 只外显数字不暴露习惯名称/内容（隐私友好，Pengu 式 streak 激励）；
+ * 调用面已各自有隐私闸门（广场设置/好友关系），此处不再重复判定
+ */
+function bestHabitStreak(userId: string, today: string): number {
+  const habits = db.prepare('SELECT id FROM user_habits WHERE user_id = ? AND archived = 0').all(userId) as any[];
+  let best = 0;
+  for (const h of habits) {
+    const days = (db.prepare('SELECT checkin_date FROM habit_checkins WHERE habit_id = ?').all(h.id) as any[])
+      .map(r => r.checkin_date as string);
+    best = Math.max(best, calcStreak(days, today));
+  }
+  return best;
+}
 
 // ============================================================
 // 类型
@@ -88,6 +105,14 @@ socialRouter.get('/posts', authMiddleware, (req: Request, res: Response) => {
       .all(userId, ...postIds) as any[]).forEach(r => likedSet.add(r.post_id));
   }
 
+  // 作者习惯 streak 外显（按本页作者去重批量计算）
+  const today = todayStr();
+  const streakMap = new Map<string, number>();
+  for (const aid of new Set(posts.map(p => p.user_id))) {
+    const s = bestHabitStreak(aid, today);
+    if (s > 0) streakMap.set(aid, s);
+  }
+
   const result = posts.map(post => ({
     id: post.id,
     content: post.content,
@@ -100,6 +125,7 @@ socialRouter.get('/posts', authMiddleware, (req: Request, res: Response) => {
       nickname: post.author_nickname,
       type: post.author_type,
       avatarEmoji: (post as any).author_avatar || '🐱',
+      habitStreak: streakMap.get(post.user_id) ?? 0,
     },
     pet: post.pet_id ? {
       id: post.pet_id,
@@ -474,6 +500,7 @@ socialRouter.get('/friends/:friendId/visit', authMiddleware, (req: Request, res:
       nickname: friend.nickname,
       type: friend.type,
       avatarEmoji: friend.avatar_emoji || '🐱',
+      habitStreak: bestHabitStreak(friendId, today),
     },
     pets: friend.privacy_hide_pet_info ? [] : pets.map((p: any) => ({
       id: p.id,

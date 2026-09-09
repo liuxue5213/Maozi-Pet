@@ -53,7 +53,12 @@ function PostCard({
           <Text style={styles.avatarEmoji}>{post.author.avatarEmoji || '🐱'}</Text>
         </View>
         <View style={styles.postHeaderInfo}>
-          <Text style={styles.authorName}>{post.author.nickname}</Text>
+          <Text style={styles.authorName}>
+            {post.author.nickname}
+            {!!post.author.habitStreak && post.author.habitStreak >= 2 && (
+              <Text style={styles.authorStreak}> 🔥{post.author.habitStreak}</Text>
+            )}
+          </Text>
           <Text style={styles.postTime}>{timeAgo}</Text>
         </View>
         {post.pet && (
@@ -416,6 +421,7 @@ const styles = StyleSheet.create({
   avatarEmoji: { fontSize: 18 },
   postHeaderInfo: { flex: 1, marginLeft: 10 },
   authorName: { fontSize: 14, fontWeight: '600', color: '#5A4A4A' },
+  authorStreak: { fontSize: 12, color: '#D2691E', fontWeight: '700' },
   postTime: { fontSize: 11, color: '#BBB', marginTop: 1 },
   petTag: { backgroundColor: '#F0F8FF', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   petTagText: { fontSize: 11, color: '#54A0FF' },
