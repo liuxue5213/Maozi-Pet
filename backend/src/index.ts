@@ -13,6 +13,7 @@ import { socialRouter } from './routes/social';
 import { inventoryRouter } from './routes/inventory';
 import { authRouter } from './routes/auth';
 import { shopRouter } from './routes/shop';
+import { tasksRouter } from './routes/tasks';
 
 // 加载环境变量
 dotenv.config();
@@ -78,6 +79,7 @@ app.use('/api/social', socialRouter);
 app.use('/api/inventory', inventoryRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/shop', shopRouter);
+app.use('/api/tasks', tasksRouter);
 
 // ============================================================
 // 错误处理

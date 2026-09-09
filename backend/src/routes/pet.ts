@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 import { todayStr } from '../utils/today';
+import { bumpTaskProgress } from '../utils/tasks';
 
 export const petRouter = Router();
 
@@ -401,6 +402,10 @@ petRouter.post('/:petId/interact', authMiddleware, (req: Request, res: Response)
   if (growth.leveledUp) message += ` ⬆️ 升级到 Lv.${pet.level}！`;
   if (growth.evolved) message += ` 🎉 进化为${pet.stage === 'child' ? '幼体' : pet.stage === 'teen' ? '少年' : '成年'}！`;
   if (coinReward > 0) message += ` 🪙+${coinReward}`;
+
+  // 每日任务进度：任意互动 +1；喂食任务单独计
+  bumpTaskProgress(userId, 'interact3');
+  if (action === 'feed') bumpTaskProgress(userId, 'feed1');
 
   const userCoins = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any)?.coins || 0;
 

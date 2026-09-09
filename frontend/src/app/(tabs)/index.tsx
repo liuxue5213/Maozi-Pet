@@ -18,6 +18,7 @@ import {
 import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { usePetStore, INTERACTION_LABELS } from '../../store/petStore';
 import { useInventoryStore } from '../../store/inventoryStore';
+import { apiFetch } from '../../config/env';
 import { useRef } from 'react';
 
 const { width } = Dimensions.get('window');
@@ -25,6 +26,16 @@ const { width } = Dimensions.get('window');
 // 与后端 pet.ts 的升级曲线保持一致：每级需要 level * 20 经验
 function expToNextLevel(level: number): number {
   return level * 20;
+}
+
+interface DailyTask {
+  taskId: string;
+  title: string;
+  target: number;
+  reward: number;
+  progress: number;
+  claimed: boolean;
+  done: boolean;
 }
 
 // ============================================================
@@ -128,7 +139,32 @@ export default function HomeScreen() {
   } = useInventoryStore();
 
   const [interactMessage, setInteractMessage] = useState('');
+  const [tasks, setTasks] = useState<DailyTask[]>([]);
   const eventAttempted = useRef(false); // 每次进入 app 只尝试拉取一次随机事件
+
+  // 每日任务：拉取 + 领取（金币即时同步到全局用户状态）
+  const loadTasks = useCallback(async () => {
+    try {
+      const result = await apiFetch<{ tasks: DailyTask[] }>('/tasks/daily');
+      setTasks(result.tasks);
+    } catch {
+      // 任务是辅助功能，静默失败
+    }
+  }, []);
+
+  const handleClaimTask = async (taskId: string) => {
+    try {
+      const result = await apiFetch<{ message: string; reward: number; totalCoins: number }>(
+        `/tasks/daily/${taskId}/claim`, { method: 'POST' });
+      usePetStore.getState().updateCoins(result.totalCoins);
+      setInteractMessage(result.message);
+      setTimeout(() => setInteractMessage(''), 3000);
+      loadTasks();
+    } catch (err: any) {
+      setInteractMessage(err.message || '领取失败');
+      setTimeout(() => setInteractMessage(''), 3000);
+    }
+  };
 
   // 退出登录（清除 Token + 重置全局状态）
   const handleLogout = async () => {
@@ -148,6 +184,7 @@ export default function HomeScreen() {
       })();
       fetchUser();
       fetchScenes();
+      loadTasks();
       if (!eventAttempted.current) {
         eventAttempted.current = true;
         fetchTodayEvent();
@@ -248,6 +285,36 @@ export default function HomeScreen() {
         <InteractionButton action="comfort" icon="💕" onPress={() => handleInteract('comfort')} />
         <InteractionButton action="pet" icon="✋" onPress={() => handleInteract('pet')} />
       </View>
+
+      {/* 每日任务 */}
+      {tasks.length > 0 && (
+        <View style={styles.statsPanel}>
+          <Text style={styles.statsTitle}>📋 每日任务</Text>
+          {tasks.map(t => (
+            <View key={t.taskId} style={styles.taskRow}>
+              <View style={styles.taskInfo}>
+                <Text style={styles.taskTitle}>{t.title}</Text>
+                <Text style={styles.taskProgressText}>
+                  {t.claimed ? '已领取' : `进度 ${t.progress}/${t.target}`} · 🪙+{t.reward}
+                </Text>
+              </View>
+              {t.claimed ? (
+                <Text style={styles.taskClaimed}>✓</Text>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.taskClaimBtn, !t.done && styles.taskClaimBtnDisabled]}
+                  disabled={!t.done}
+                  onPress={() => handleClaimTask(t.taskId)}
+                >
+                  <Text style={[styles.taskClaimText, !t.done && styles.taskClaimTextDisabled]}>
+                    {t.done ? '领取' : '进行中'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* 属性面板 */}
       <View style={styles.statsPanel}>
@@ -389,6 +456,27 @@ const styles = StyleSheet.create({
     }),
   },
   statsTitle: { fontSize: 16, fontWeight: '600', color: '#5A4A4A', marginBottom: 12 },
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F0F0',
+  },
+  taskInfo: { flex: 1, paddingRight: 8 },
+  taskTitle: { fontSize: 14, color: '#5A4A4A', fontWeight: '500' },
+  taskProgressText: { fontSize: 12, color: '#BBB', marginTop: 2 },
+  taskClaimBtn: {
+    backgroundColor: '#FF9F43',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  taskClaimBtnDisabled: { backgroundColor: '#EEE' },
+  taskClaimText: { fontSize: 12, fontWeight: '600', color: '#FFF' },
+  taskClaimTextDisabled: { color: '#BBB' },
+  taskClaimed: { fontSize: 16, color: '#5A7A6A', paddingHorizontal: 10 },
   expRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   expLabel: { width: 44, fontSize: 13, fontWeight: '700', color: '#FF9F43' },
   expBarBg: { flex: 1, height: 10, backgroundColor: '#F0F0F0', borderRadius: 5, overflow: 'hidden', marginHorizontal: 8 },

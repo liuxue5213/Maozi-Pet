@@ -297,6 +297,16 @@ db.exec(`
     UNIQUE(user_id, pet_id, content)
   );
   CREATE INDEX IF NOT EXISTS idx_memories_pet ON pet_memories(pet_id, created_at);
+
+  -- 每日任务进度（按自然日刷新，领取标记防重复）
+  CREATE TABLE IF NOT EXISTS task_progress (
+    user_id TEXT NOT NULL,
+    task_date TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    progress INTEGER NOT NULL DEFAULT 0,
+    claimed INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, task_date, task_id)
+  );
 `);
 
 // ============================================================

@@ -7,6 +7,7 @@ import { Router, Request, Response } from 'express';
 import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 import { todayStr } from '../utils/today';
+import { bumpTaskProgress } from '../utils/tasks';
 import { extractFacts } from '../utils/memory';
 
 export const aiRouter = Router();
@@ -156,7 +157,8 @@ aiRouter.post('/chat', authMiddleware, async (req: Request, res: Response) => {
       // 清理过期历史（只保留最近 100 条）
       cleanupOldMessages(userId, petId);
 
-      // 从用户消息中提取值得记住的事实（静默进行，失败不影响对话）
+      // 每日任务：聊天进度；同时提取值得记住的事实（静默，失败不影响对话）
+      bumpTaskProgress(userId, 'chat1');
       extractMemories(userId, petId, lastMessage.content);
     }
 
