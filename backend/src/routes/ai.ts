@@ -9,6 +9,7 @@ import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 import { todayStr } from '../utils/today';
 import { bumpTaskProgress } from '../utils/tasks';
 import { extractFacts } from '../utils/memory';
+import { isMessageFromToday, buildRecallInstruction, buildLocalRecallReply } from '../utils/recall';
 
 export const aiRouter = Router();
 
@@ -128,7 +129,16 @@ aiRouter.post('/chat', authMiddleware, async (req: Request, res: Response) => {
 
     // --- 构建 Prompt（注入关于主人的记忆，实现个性化陪伴）---
     const memories = petId ? getMemories(userId, petId, 10) : [];
-    const systemPrompt = buildSystemPrompt(personality, req.body.petState, petInfo, memories);
+
+    // 今天第一次和这只宠物说话时，主动回忆一件事（对标"芙崽每日思考"，让用户看见记忆）
+    const lastMsgRow = petId
+      ? db.prepare('SELECT created_at FROM chat_messages WHERE user_id = ? AND pet_id = ? ORDER BY created_at DESC, id DESC LIMIT 1')
+          .get(userId, petId) as any
+      : null;
+    const isFirstChatToday = petId ? !isMessageFromToday(lastMsgRow?.created_at) : false;
+    const recallInstruction = isFirstChatToday ? buildRecallInstruction(petInfo?.name || '帽子', memories) : null;
+
+    const systemPrompt = buildSystemPrompt(personality, req.body.petState, petInfo, memories, recallInstruction ?? undefined);
 
     // --- 调用 AI（带超时），失败时用本地回复兜底 ---
     let aiResponse: string;
@@ -138,8 +148,10 @@ aiRouter.post('/chat', authMiddleware, async (req: Request, res: Response) => {
         ...limitedHistory,
       ]);
     } catch {
-      // AI API 不可用时使用本地兜底回复
-      aiResponse = getLocalReply(personality, lastMessage.content, req.body.petState);
+      // AI API 不可用时使用本地兜底回复；触发回忆日时兜底回复也带记忆
+      aiResponse = (recallInstruction && petInfo)
+        ? buildLocalRecallReply(personality, petInfo.name, memories) || getLocalReply(personality, lastMessage.content, req.body.petState)
+        : getLocalReply(personality, lastMessage.content, req.body.petState);
     }
 
     // --- 保存聊天记录 ---
@@ -266,9 +278,9 @@ aiRouter.post('/event', authMiddleware, async (req: Request, res: Response) => {
 // 内部函数
 // ============================================================
 
-function buildSystemPrompt(personality: string, petState?: any, petInfo?: any, memories: string[] = []): string {
+function buildSystemPrompt(personality: string, petState?: any, petInfo?: any, memories: string[] = [], recallInstruction?: string): string {
   const base = PERSONALITY_PROMPTS[personality] || PERSONALITY_PROMPTS.cute;
-  if (!petState && memories.length === 0) return base;
+  if (!petState && memories.length === 0 && !recallInstruction) return base;
 
   const stageNames: Record<string, string> = {
     egg: '宠物蛋',
@@ -327,6 +339,11 @@ function buildSystemPrompt(personality: string, petState?: any, petInfo?: any, m
   } else {
     lines.push('');
     lines.push('请结合记忆自然聊天，语气符合你的性格设定');
+  }
+
+  // 今日首次对话：主动回忆一件事（在所有其他指令之后追加，优先级最高）
+  if (recallInstruction) {
+    lines.push(recallInstruction);
   }
 
   return lines.join('\n');

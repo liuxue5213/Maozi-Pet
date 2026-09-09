@@ -1,6 +1,7 @@
 /**
  * 帽子AI宠物 - 宠物档案馆
  * 展示所有已退休宠物的纪念页，让"退休循环"有温度地收尾
+ * 记忆日记：翻看每只退休宠物还记得的主人往事（记忆可查看是差异化信任特性）
  */
 import React, { useState, useCallback } from 'react';
 import {
@@ -10,6 +11,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Platform,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { apiFetch } from '../config/env';
@@ -24,6 +27,12 @@ interface RetiredPet {
   totalInteractions: number;
   isRetired: boolean;
   createdAt: string;
+}
+
+interface MemoryItem {
+  id: number;
+  content: string;
+  created_at: string;
 }
 
 const PERSONALITY_LABELS: Record<string, { label: string; emoji: string }> = {
@@ -41,8 +50,86 @@ const STAGE_LABELS: Record<string, string> = {
   adult: '成年',
 };
 
+// ============================================================
+// 记忆日记弹窗
+// ============================================================
+
+function MemoryDiaryModal({
+  visible,
+  pet,
+  onClose,
+}: {
+  visible: boolean;
+  pet: RetiredPet | null;
+  onClose: () => void;
+}) {
+  const [memories, setMemories] = useState<MemoryItem[] | null>(null);
+
+  React.useEffect(() => {
+    if (!visible || !pet) return;
+    setMemories(null);
+    (async () => {
+      try {
+        const result = await apiFetch<{ memories: MemoryItem[] }>(`/ai/memories/${pet.id}?limit=50`);
+        setMemories(result.memories);
+      } catch {
+        setMemories([]);
+      }
+    })();
+  }, [visible, pet]);
+
+  if (!pet) return null;
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+      <View style={styles.diaryContainer}>
+        <View style={styles.diaryHeader}>
+          <Text style={styles.diaryTitle}>📖 {pet.name}的记忆日记</Text>
+          <TouchableOpacity onPress={onClose}>
+            <Text style={styles.diaryClose}>✕</Text>
+          </TouchableOpacity>
+        </View>
+
+        {memories === null ? (
+          <View style={styles.diaryLoading}>
+            <ActivityIndicator size="large" color="#FF9F43" />
+            <Text style={styles.diaryLoadingText}>翻阅回忆中...</Text>
+          </View>
+        ) : memories.length === 0 ? (
+          <View style={styles.diaryEmpty}>
+            <Text style={styles.diaryEmptyEmoji}>💭</Text>
+            <Text style={styles.diaryEmptyTitle}>{pet.name}没有留下记忆</Text>
+            <Text style={styles.diaryEmptyDesc}>聊天中说过的事（名字、喜好、叮嘱）会记录在这里</Text>
+          </View>
+        ) : (
+          <ScrollView style={styles.diaryList} contentContainerStyle={styles.diaryListContent}>
+            <Text style={styles.diaryCount}>它一共记得 {memories.length} 件关于你的事</Text>
+            {memories.map((m, idx) => (
+              <View key={m.id} style={styles.memoryCard}>
+                <View style={styles.memoryHeader}>
+                  <Text style={styles.memoryIndex}>#{memories.length - idx}</Text>
+                  <Text style={styles.memoryDate}>
+                    {m.created_at ? new Date(m.created_at).toLocaleDateString('zh-CN') : ''}
+                  </Text>
+                </View>
+                <Text style={styles.memoryContent}>{m.content}</Text>
+              </View>
+            ))}
+            <Text style={styles.diaryFooter}>—— 这些回忆只属于你们 ——</Text>
+          </ScrollView>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
+// ============================================================
+// 主页面
+// ============================================================
+
 export default function ArchiveScreen() {
   const [pets, setPets] = useState<RetiredPet[] | null>(null);
+  const [diaryPet, setDiaryPet] = useState<RetiredPet | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -92,11 +179,18 @@ export default function ArchiveScreen() {
                   共同生活 {daysOwned} 天 · 互动 {pet.totalInteractions} 次
                 </Text>
               </View>
-              <Text style={styles.retiredBadge}>🌟 荣誉退休</Text>
+              <View style={styles.cardActions}>
+                <TouchableOpacity style={styles.diaryBtn} onPress={() => setDiaryPet(pet)}>
+                  <Text style={styles.diaryBtnText}>📖 记忆日记</Text>
+                </TouchableOpacity>
+                <Text style={styles.retiredBadge}>🌟 荣誉退休</Text>
+              </View>
             </View>
           );
         })
       )}
+
+      <MemoryDiaryModal visible={!!diaryPet} pet={diaryPet} onClose={() => setDiaryPet(null)} />
     </ScrollView>
   );
 }
@@ -135,6 +229,14 @@ const styles = StyleSheet.create({
   petInfo: { flex: 1 },
   petName: { fontSize: 17, fontWeight: '700', color: '#5A4A4A', marginBottom: 4 },
   petMeta: { fontSize: 12, color: '#999', marginTop: 2 },
+  cardActions: { alignItems: 'flex-end', gap: 8 },
+  diaryBtn: {
+    backgroundColor: '#E8F8F5',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 14,
+  },
+  diaryBtnText: { fontSize: 12, fontWeight: '600', color: '#5A7A6A' },
   retiredBadge: {
     fontSize: 11,
     fontWeight: '600',
@@ -145,4 +247,42 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
   },
+
+  // 记忆日记弹窗
+  diaryContainer: { flex: 1, backgroundColor: '#FFF5F7' },
+  diaryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  diaryTitle: { fontSize: 16, fontWeight: '600', color: '#5A4A4A' },
+  diaryClose: { fontSize: 18, color: '#999' },
+  diaryLoading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  diaryLoadingText: { fontSize: 13, color: '#999', marginTop: 12 },
+  diaryEmpty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
+  diaryEmptyEmoji: { fontSize: 48, marginBottom: 12 },
+  diaryEmptyTitle: { fontSize: 16, fontWeight: '600', color: '#5A4A4A', marginBottom: 6 },
+  diaryEmptyDesc: { fontSize: 13, color: '#999', textAlign: 'center', lineHeight: 19 },
+  diaryList: { flex: 1 },
+  diaryListContent: { padding: 20 },
+  diaryCount: { fontSize: 13, color: '#999', textAlign: 'center', marginBottom: 16 },
+  memoryCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4 },
+      android: { elevation: 1 },
+    }),
+  },
+  memoryHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  memoryIndex: { fontSize: 11, fontWeight: '700', color: '#FF9F43' },
+  memoryDate: { fontSize: 11, color: '#CCC' },
+  memoryContent: { fontSize: 14, color: '#5A4A4A', lineHeight: 20 },
+  diaryFooter: { fontSize: 12, color: '#CCC', textAlign: 'center', marginTop: 8 },
 });
