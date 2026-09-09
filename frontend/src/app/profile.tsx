@@ -39,6 +39,7 @@ export default function ProfileScreen() {
   const [isEditing, setIsEditing] = useState(false);
   const [editNickname, setEditNickname] = useState('');
   const [editBio, setEditBio] = useState('');
+  const [editAvatar, setEditAvatar] = useState('🐱');
   const [isLoading, setIsLoading] = useState(false);
   // 推送免打扰时段（HH:MM）
   const [quietStart, setQuietStart] = useState('');
@@ -102,6 +103,7 @@ export default function ProfileScreen() {
       setStats(result.stats);
       setEditNickname(result.user.nickname);
       setEditBio(result.user.bio);
+      setEditAvatar(result.user.avatarEmoji || '🐱');
     } catch (err: any) {
       if (err.message.includes('过期') || err.message.includes('无效')) {
         await clearToken();
@@ -115,7 +117,7 @@ export default function ProfileScreen() {
     try {
       await apiFetch('/auth/profile', {
         method: 'PUT',
-        body: JSON.stringify({ nickname: editNickname, bio: editBio }),
+        body: JSON.stringify({ nickname: editNickname, bio: editBio, avatarEmoji: editAvatar }),
       });
       setIsEditing(false);
       await fetchProfile();
@@ -182,6 +184,19 @@ export default function ProfileScreen() {
 
         {isEditing ? (
           <View style={styles.editForm}>
+            {/* 头像选择 */}
+            <Text style={styles.avatarPickerLabel}>选择头像</Text>
+            <View style={styles.avatarPicker}>
+              {avatars.map(a => (
+                <TouchableOpacity
+                  key={a}
+                  style={[styles.avatarOption, editAvatar === a && styles.avatarOptionSelected]}
+                  onPress={() => setEditAvatar(a)}
+                >
+                  <Text style={styles.avatarOptionEmoji}>{a}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <TextInput
               style={styles.nameInput}
               value={editNickname}
@@ -413,6 +428,26 @@ const styles = StyleSheet.create({
   quietSaveText: { fontSize: 13, color: '#FFF', fontWeight: '600' },
   quietClear: { fontSize: 12, color: '#BBB', marginTop: 10 },
   avatarEmoji: { fontSize: 40 },
+  avatarPickerLabel: { fontSize: 13, fontWeight: '600', color: '#777', marginBottom: 8, textAlign: 'center' },
+  avatarPicker: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+  avatarOption: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F8F8F8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  avatarOptionSelected: { borderColor: '#FF9F43', backgroundColor: '#FFF9F0' },
+  avatarOptionEmoji: { fontSize: 24 },
   nickname: { fontSize: 22, fontWeight: '700', color: '#5A4A4A' },
   email: { fontSize: 13, color: '#999', marginTop: 4 },
   bio: { fontSize: 13, color: '#777', marginTop: 6, textAlign: 'center', paddingHorizontal: 40 },
