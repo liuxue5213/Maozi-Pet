@@ -2,7 +2,7 @@
 
 > Run 日志（最新在上）
 
-## Run @2026-09-10 09:00-09:20（日间周期 10 点轮：R21 习惯 streak 社交外显）
+## Run @2026-09-10 07:28-07:31（第 4 轮：R21 习惯 streak 社交外显）
 - **竞品依据**：Pengu 崛起三件套 = streak + 进度 + 社交（Liftoff 拆解，06:00 扫描已录）；习惯数据入社交 = 与 frame 头像框外显同构的激励环
 - **完成 R21：习惯 streak 社交外显**
   · `social.ts` 新增 `bestHabitStreak(userId, today)` 辅助（活跃习惯取最高，**只外显数字不暴露习惯名称**——喝水/吃药属于敏感个人信息，数字外显已足社交激励且隐私友好）
@@ -10,7 +10,7 @@
   · 前端：帖子作者名 🔥X 徽章（≥2 才显示防噪音）+ 串门弹窗标题 🔥X；socialStore Post 接口补 habitStreak
 - 测试：双端 typecheck + 102 单测全绿；冒烟 3/3（3 天 streak 作者的帖子 feed 返回 3 / 好友串门返回 3 / 无习惯作者返回 0）
 
-## Run @2026-09-10 08:35-08:55（日间周期 09 点轮：R20 无压力断签走查）
+## Run @2026-09-10 07:22-07:28（第 3 轮：R20 无压力断签走查）
 - **竞品依据**：habi.app 反焦虑思潮 + Duolingo 宽容机制（08 轮扫描已录）
 - **走查结论（机制层已达标）**：断签零惩罚（streak 归零不扣属性/金币）；昨日打卡今日 streak 仍存活不误报断签；输了也+心情（RPS/猜数字）；睡觉「心情奖励明天继续」正向表述；R19 提醒文案正向框架
 - **修复 3 处生硬文案**（habits.tsx + routes/habits.ts message）：
@@ -19,7 +19,7 @@
   · streak=1 打卡成功「连续 1 天」→「🌱 重新启程第 1 天」（重爬不尴尬）
 - 测试：102 单测全绿 + 双端 typecheck；curl 冒烟重爬文案实证「🌱 重新启程第 1 天」上线（排障：tsx 非 watch 模式改代码不热载，须重启 dev server）
 
-## Run @2026-09-10 08:00-08:35（日间周期 08 点轮：R19 习惯打卡提醒推送）
+## Run @2026-09-10 07:10-07:27（第 2 轮：R19 习惯打卡提醒推送）
 - **竞品扫描**（已录入 competitor-analysis.md）：2026 推送共识 = 行为触发>固定时刻（AppBot/OneSignal）；Duolingo streak freeze/repair = 宽容型 streak 机制标杆（trophy.so 10 例拆解）；AI 预测发送时刻（Chela/Reclaim）在无用户行为数据前不可做，先用轻量启发式；habi.app 90 天实测「多数习惯 App 第 2 周被弃」→ 智能提醒是留存命门
 - **完成 R19：习惯打卡提醒（push.ts 习惯维度扩展 + index.ts 挂载）**
   · 触发策略（轻量自适应）：本地 **18:00-22:00 窗口**（一天将尽的碎片档，避开清晨/工作时段）+ 只提醒 **streak≥1 且今日未打** 的习惯 + **每用户每日最多 1 条**（streak 最高者优先=守护最值钱的积累）
@@ -29,8 +29,9 @@
 - **冒烟（直连 dev DB + 伪造窗口时刻，真调 Expo API）**：08:00 窗口外 attempted=0 ✅；19:00 attempted=1 + push_sent 落库 + 假令牌被 Expo 判 DeviceNotRegistered 自动清理 ✅；同日二次 attempted=0 ✅；免打扰 17:00-23:00 覆盖窗口 attempted=0 ✅。排障：冒烟脚本两坑——`toISOString()` 是 UTC 日期（本地 07:55 时 UTC 已是昨天，回填错位 streak=0）须用本地日期拼接；占位 ID 复用撞 UNIQUE 改随机 ID
 - 遗留记录：Duolingo 式「streak 冻结券」（可购买/成就兑换的保护道具）列为候选 R23
 
-## Run @2026-09-10 07:00-07:40（第三夜/日间周期 07 点轮：R18 streak 里程碑 → 宠物成长绑定）
+## Run @2026-09-10 07:00-07:20（第 1 轮：R18 streak 里程碑 → 宠物成长绑定）
 - **起点回归**：83 单测全绿 + 双端 typecheck + 远端同步（本地 main == origin/main）
+- **节奏说明**：候选功能充足，调整为**整点小时轮**节拍（每小时一轮 review→竞品→开发→测试→提交），避免过早耗尽路线图
 - **⛔ APK 交付阻塞确认（用户侧动作）**：打包路径已存在且零密钥（`.github/workflows/build-apk-gradle.yml`，workflow_dispatch 手动触发 + v* 标签，GitHub Runner 上 prebuild + assembleDebug）；但本机 `gh` CLI 未认证、`eas` 未登录、本地无 Android SDK——**无法从本机触发/取产物**。用户解锁方式（二选一）：① 本机 `gh auth login` 后 `gh workflow run build-apk-gradle.yml -f api_base_url='http://<服务器IP>:60235/api'`，产物在 Actions Artifacts（maozi-pet-debug-apk，留 30 天）；② 网页 GitHub Actions 手动 Run workflow 填入 api_base_url。另 `frontend/eas.json` preview/production 的 EXPO_PUBLIC_API_BASE_URL 仍是占位符「替换为你的服务器IP」，真机包必须填真实地址
 - **竞品依据**（06:00 收官轮扫描）：Habit-chi/Pawbit 验证「streak 驱动宠物真实进化」是习惯品类标配，我们此前 streak 只是数字外显
 - **完成 R18：习惯 streak 里程碑 → 宠物成长绑定**
