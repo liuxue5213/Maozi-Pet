@@ -53,3 +53,13 @@
 **串门社交对照**（小火人双人共同领养 vs 本项目只读串门）：好友串门页的 🎁👍💌 三个占位按钮是"假功能"，比没有按钮更伤信任——本轮把 👍点赞 / 🎁送礼 做成真实 API（送礼花自己金币给好友宠物加属性 = 无负担利他社交），💌 直接移除。
 
 来源：[Pou - Google Play](https://play.google.com/store/apps/details?id=me.pou.app3d)、[Poupedia-金币经济](https://poupedia.com/Pou_(game))、[Simple Wikipedia-Pou](https://simple.wikipedia.org/wiki/Pou_(video_game))
+
+## 2026-09-10 第 4 轮：推送召回设计情报
+
+- **Pushwoosh 游戏推送报告**：个性化推送可让游戏 DAU/MAU 提升至 3 倍；召回推送搭配小激励效果更佳
+- **Reddit/Gamedev**：电子宠物"饥饿提醒"经典实现 = 通知时间按（剩余食物 ÷ 消耗速率）计算，回 App 取消、离开重设；本项目用服务端定时扫描等价实现且天然防卸载重装错乱
+- **Apple 官方推荐**：My Tamagotchi Forever 因"通知提醒照料宠物"被 App Store 专题收录——照料提醒是电子宠物品类被平台认可的核心交互
+- **QQ宠物回归**：接入大模型后"宠物主动找你聊天"是比推送更强的情感召回；我们的宠物主动回忆（Run 5 已做）即此思路
+- **aidorable 免打扰原则**：频繁推送有害，需免打扰时段与粒度设置 → 已按"每宠物每类型每日 1 条"落地，免打扰时段 UI 列 P3
+
+来源：[Pushwoosh](https://www.pushwoosh.com/zh/blog/game-app-push-notifications/)、[Reddit](https://www.reddit.com/r/gamemaker/comments/1j27pik/handling_the_passage_of_time_in_a_virtual_pet/)、[Apple](https://apps.apple.com/us/iphone/story/id1350681703?l=zh-Hans-CN)、[知乎-QQ宠物](https://zhuanlan.zhihu.com/p/2068773516984447500)、[aidorable](https://aidorable.ai)

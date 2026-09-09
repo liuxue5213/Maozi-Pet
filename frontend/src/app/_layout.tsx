@@ -8,7 +8,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { getToken } from '../config/env';
+import { getToken, registerPushNotifications } from '../config/env';
 
 export default function RootLayout() {
   const router = useRouter();
@@ -21,6 +21,9 @@ export default function RootLayout() {
       // 未登录（首次安装 / Token 被清除）→ 进入登录页
       if (!token) {
         router.replace('/login');
+      } else {
+        // 已登录：注册推送（宠物想你时会主动叫你），失败静默
+        registerPushNotifications();
       }
     })();
   }, []);

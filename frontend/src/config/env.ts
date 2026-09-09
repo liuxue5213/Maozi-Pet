@@ -4,6 +4,8 @@
  */
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 
 // API 地址（构建时注入或本地开发）
 const apiBaseUrl =
@@ -98,5 +100,47 @@ export async function apiFetch<T>(
       throw new Error('网络超时，请检查网络连接');
     }
     throw error;
+  }
+}
+
+// ============================================================
+// 推送令牌注册（Expo Push 召回）
+// 仅原生端尝试；Web 无推送。任何失败静默跳过，不影响正常使用。
+// ============================================================
+
+export async function registerPushNotifications(): Promise<void> {
+  try {
+    if (Platform.OS === 'web') return;
+
+    // Android 13+ 需要运行时请求通知权限
+    if (Platform.OS === 'android') {
+      const granted = await Notifications.getPermissionsAsync();
+      if (!granted.granted) {
+        const asked = await Notifications.requestPermissionsAsync();
+        if (!asked.granted) return;
+      }
+    }
+
+    // 优先用 Expo 令牌；个别环境取不到时退回设备令牌包裹格式
+    let token = '';
+    try {
+      const expo = await Notifications.getExpoPushTokenAsync();
+      token = expo.data;
+    } catch {
+      const device = await Notifications.getDevicePushTokenAsync();
+      token = `ExpoPushToken[${String(device.data)}]`;
+    }
+    if (!token || !cachedToken) return;
+
+    await fetch(`${ENV.apiBaseUrl}/push/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${cachedToken}`,
+      },
+      body: JSON.stringify({ token }),
+    });
+  } catch {
+    // 推送是增强功能，任何失败都静默
   }
 }

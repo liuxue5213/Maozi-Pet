@@ -2,6 +2,18 @@
 
 > Run 日志（最新在上）
 
+## Run @2026-09-10 ~03:30（第 4/6 轮）
+- 竞品：游戏推送召回三原则（Pushwoosh/Reddit/aidorable）——**宠物口吻文案**（QQ宠物式"宠物找你"而非系统通知）、**状态驱动触发**（饥饿=剩余量÷衰减速率）、**克制防骚扰**（每类每天 1 次 + 免打扰）
+- 完成：**推送召回后端全链路 + 前端令牌注册**
+  · 新表 push_tokens（token 全局唯一防重复）+ push_sent（每宠物每类型每日一条防骚扰）
+  · utils/push.ts：注册（Expo 令牌正则校验）、扫描（hunger/mood<30 且今日未推）、发送（fetch 调 Expo API，零新依赖）、**DeviceNotRegistered 自动清理失效令牌**、发送失败回滚当日名额下轮重试
+  · 路由 POST /push/register、POST /push/dispatch；index.ts 每 30 分钟自动扫描（PUSH_ENABLED=false 可关）
+  · 前端：expo-notifications（SDK 51 钉版 ~0.28.19）+ 根布局登录后注册（Web 跳过/Android 请求权限/失败静默）
+- 测试：**真实 Expo API 联调**——非法格式 400、合法注册 200、dispatch 触发真实调用（假令牌被 Expo 判 DeviceNotRegistered → 令牌自动清理 1 条）、防骚扰记录生效、重复 dispatch 不重发；双端 typecheck + Web 构建 + 后端 build + 单测全过
+- 遗留：真机送达需 FCM（google-services.json，P2 记录）；免打扰时段 UI（P3）；退休 UI 入口补挂（见 2c81e5c 遗留）
+
+---
+
 ## Run @2026-09-10 05:00（加轮：记忆数据导出，猜拳会话）
 - 竞品/事件印证：2026-07「800 万人通宵抢救 AI 记忆」停服恐慌 → 记忆「可查看 + 可带走」是差异化信任特性，本轮补齐最后一环
 - 完成：**记忆数据导出**（GET /api/ai/memories/:petId/export 返回宠物档案 + 全量记忆 JSON；聊天页「它记得的事」面板新增 📥 导出按钮：Web 下载 JSON 文件 / 原生端系统分享文本；仅宠物主人可导出）

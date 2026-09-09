@@ -338,6 +338,23 @@ db.exec(`
     unlocked_at TEXT NOT NULL,
     PRIMARY KEY (user_id, achievement_id)
   );
+
+  -- 推送令牌（一个用户可有多台设备；token 全局唯一防重复注册）
+  CREATE TABLE IF NOT EXISTS push_tokens (
+    user_id TEXT NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id);
+
+  -- 推送防骚扰记录（每宠物每类型每天最多一条）
+  CREATE TABLE IF NOT EXISTS push_sent (
+    pet_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    sent_date TEXT NOT NULL,
+    PRIMARY KEY (pet_id, kind, sent_date)
+  );
 `);
 
 // ============================================================

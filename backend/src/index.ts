@@ -15,6 +15,8 @@ import { authRouter } from './routes/auth';
 import { shopRouter } from './routes/shop';
 import { tasksRouter } from './routes/tasks';
 import { achievementsRouter } from './routes/achievements';
+import { pushRouter } from './routes/push';
+import { dispatchPetCarePushes } from './utils/push';
 
 // 加载环境变量
 dotenv.config();
@@ -82,6 +84,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/shop', shopRouter);
 app.use('/api/tasks', tasksRouter);
 app.use('/api/achievements', achievementsRouter);
+app.use('/api/push', pushRouter);
 
 // ============================================================
 // 错误处理
@@ -109,6 +112,15 @@ const server = app.listen(PORT, () => {
   console.log(`📡 环境: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔒 CORS: ${allowedOrigins[0] === '*' ? '开发模式（全开）' : allowedOrigins.join(', ')}`);
 });
+
+// 推送召回：每 30 分钟扫描一次需要照料的宠物（PUSH_ENABLED=false 可关闭，测试用）
+if (process.env.PUSH_ENABLED !== 'false') {
+  setInterval(() => {
+    dispatchPetCarePushes()
+      .then(s => { if (s.attempted > 0) console.log(`📨 推送扫描: 尝试 ${s.attempted}, 成功 ${s.sent}, 清理失效令牌 ${s.invalidRemoved}`); })
+      .catch(err => console.error('推送扫描失败:', err.message));
+  }, 30 * 60 * 1000);
+}
 
 // Graceful Shutdown
 function shutdown(signal: string) {
