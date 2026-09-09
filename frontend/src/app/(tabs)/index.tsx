@@ -485,6 +485,7 @@ export default function HomeScreen() {
   } = usePetStore();
   const {
     currentScene, equips, fetchEquips: fetchPetEquips, fetchScenes,
+    backpack, furniture, fetchBackpack,
   } = useInventoryStore();
 
   const [interactMessage, setInteractMessage] = useState('');
@@ -494,6 +495,12 @@ export default function HomeScreen() {
   const [retireVisible, setRetireVisible] = useState(false);
   const [retireBusy, setRetireBusy] = useState(false);
   const eventAttempted = useRef(false); // 每次进入 app 只尝试拉取一次随机事件
+
+  // 已摆放的家具（背包里有图标定义 + 家园里已摆放），按摆放顺序展示
+  const placedFurniture = React.useMemo(
+    () => backpack.filter(i => i.category === 'furniture' && furniture.includes(i.id)),
+    [backpack, furniture],
+  );
 
   // 每日任务：拉取 + 领取（金币即时同步到全局用户状态）
   const loadTasks = useCallback(async () => {
@@ -555,6 +562,7 @@ export default function HomeScreen() {
       })();
       fetchUser();
       fetchScenes();
+      fetchBackpack();
       loadTasks();
       if (!eventAttempted.current) {
         eventAttempted.current = true;
@@ -651,6 +659,15 @@ export default function HomeScreen() {
 
       {/* 宠物展示区 */}
       <PetAvatar stage={pet.stage} stats={pet.stats} equips={equips} isSleeping={isSleeping} />
+
+      {/* 家园家具（背包-家园里摆放的，在宠物脚下展示） */}
+      {placedFurniture.length > 0 && (
+        <View style={styles.furnitureRow}>
+          {placedFurniture.map(item => (
+            <Text key={item.id} style={styles.furnitureEmoji}>{item.icon}</Text>
+          ))}
+        </View>
+      )}
 
       {/* 互动反馈消息 */}
       {interactMessage ? (
@@ -886,6 +903,14 @@ const styles = StyleSheet.create({
     textShadowRadius: 2,
   },
   stageHint: { fontSize: 14, color: '#999', marginTop: 8 },
+  furnitureRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 14,
+  },
+  furnitureEmoji: { fontSize: 26 },
   messageBubble: {
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 20,
