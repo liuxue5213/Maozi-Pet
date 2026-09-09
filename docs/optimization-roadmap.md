@@ -2,6 +2,13 @@
 
 > Run 日志（最新在上）
 
+## Run @2026-09-10 04:05-04:35（第三夜 会话C：第 14 轮 = 社交信任补全）
+- **起点走查**（04:05 全量扫描）：社交骨架薄——发帖 UI 不传 petId（store 支持但无入口，帖子不能晒宠）、好友列表/搜索/发帖弹窗头像硬编码 🐱（后端 search/friends 也不返回 avatar_emoji）、帖子无删除（发错只能干瞪眼）。竞品印证：晒宠+养成记录分享是宠物社区核心 UGC（68 款宠物 App 分析，人人都是产品经理）；Livly Island「养成+虚拟社交」持续吸金——「假头像」与第 3 轮已验证过的「假按钮伤信任」同型
+- **删帖闭环**：DELETE /social/posts/:id（parsePostId 校验/404/403 只能删自己的）+ 事务级联清 post_likes/post_comments（防孤儿数据）；前端自己的帖子显示 🗑️，**两段点击确认**（3 秒窗口，Alert.alert Web 端 no-op 的平台无关替代）
+- **好友真实头像三连**：/friends/search、/friends、/friends/:id/visit 均 SELECT avatar_emoji 并返回 avatarEmoji（兜底 🐱）；前端 FriendCard/搜索结果渲染真实头像；UserInfo 补 avatarEmoji 类型（/auth/profile 早已返回）
+- **发帖晒宠物**：发帖弹窗接入真实头像 + 「＋🐾 和 XX 一起」chip（有活跃宠物才显示），createPost 传 petId；帖子宠物 tag 升级为「🐾 名字 · 阶段」
+- 测试：71 单测全绿 + 双端 typecheck；curl 冒烟 8/8（发帖带 petId→feed 返回真实头像+宠物/搜索/好友列表/串门 avatarEmoji/他人删帖 403/不存在 404/本人删帖 200）；sqlite 直查删帖后 orphan likes/comments = 0
+
 ## Run @2026-09-10 04:15-04:21（第二夜迭代 会话B：第 13 轮 = 推送免打扰时段，P3 收尾）
 - 竞品印证：aidorable 免打扰原则（频繁推送有害）——前轮已做"每宠物每类型每日 1 条"，本轮补最后一块：**用户自定义静音窗口**
 - 完成：**推送免打扰时段**

@@ -298,6 +298,34 @@ socialRouter.post('/posts/:postId/comments', authMiddleware, (req: Request, res:
   });
 });
 
+// 删除自己的帖子（点赞/评论随事务一并清理，防止孤儿数据）
+socialRouter.delete('/posts/:postId', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const postId = parsePostId(req);
+  if (postId === null) {
+    res.status(400).json({ error: '无效的帖子 ID' });
+    return;
+  }
+
+  const post = db.prepare('SELECT id, user_id FROM posts WHERE id = ?').get(postId) as any;
+  if (!post) {
+    res.status(404).json({ error: '帖子不存在' });
+    return;
+  }
+  if (post.user_id !== userId) {
+    res.status(403).json({ error: '只能删除自己的帖子' });
+    return;
+  }
+
+  transaction((tx) => {
+    tx.prepare('DELETE FROM post_likes WHERE post_id = ?').run(postId);
+    tx.prepare('DELETE FROM post_comments WHERE post_id = ?').run(postId);
+    tx.prepare('DELETE FROM posts WHERE id = ?').run(postId);
+  });
+
+  res.json({ message: '帖子已删除' });
+});
+
 // ============================================================
 // 好友系统
 // ============================================================
@@ -313,7 +341,7 @@ socialRouter.get('/friends/search', authMiddleware, (req: Request, res: Response
   }
 
   const users = db.prepare(`
-    SELECT id, nickname, type FROM users
+    SELECT id, nickname, type, avatar_emoji FROM users
     WHERE id != ? AND nickname LIKE ? ESCAPE '\\'
     LIMIT 20
   `).all(userId, `%${escapeLike(keyword)}%`) as any[];
@@ -331,6 +359,7 @@ socialRouter.get('/friends/search', authMiddleware, (req: Request, res: Response
     id: u.id,
     nickname: u.nickname,
     type: u.type,
+    avatarEmoji: u.avatar_emoji || '🐱',
     isFriend: friendIds.has(u.id),
   }));
 
@@ -382,7 +411,7 @@ socialRouter.get('/friends', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
 
   const friends = db.prepare(`
-    SELECT u.id, u.nickname, u.type, f.created_at
+    SELECT u.id, u.nickname, u.type, u.avatar_emoji, f.created_at
     FROM friendships f
     JOIN users u ON f.friend_id = u.id
     WHERE f.user_id = ?
@@ -394,6 +423,7 @@ socialRouter.get('/friends', authMiddleware, (req: Request, res: Response) => {
       id: f.id,
       nickname: f.nickname,
       type: f.type,
+      avatarEmoji: f.avatar_emoji || '🐱',
       friendsSince: f.created_at,
     })),
   });
@@ -411,7 +441,7 @@ socialRouter.get('/friends/:friendId/visit', authMiddleware, (req: Request, res:
     return;
   }
 
-  const friend = db.prepare('SELECT id, nickname, type, privacy_hide_pet_info FROM users WHERE id = ?').get(friendId) as any;
+  const friend = db.prepare('SELECT id, nickname, type, avatar_emoji, privacy_hide_pet_info FROM users WHERE id = ?').get(friendId) as any;
   if (!friend) {
     res.status(404).json({ error: '好友不存在' });
     return;
@@ -443,6 +473,7 @@ socialRouter.get('/friends/:friendId/visit', authMiddleware, (req: Request, res:
       id: friend.id,
       nickname: friend.nickname,
       type: friend.type,
+      avatarEmoji: friend.avatar_emoji || '🐱',
     },
     pets: friend.privacy_hide_pet_info ? [] : pets.map((p: any) => ({
       id: p.id,

@@ -55,6 +55,7 @@ export interface UserInfo {
   id: string;
   type: 'guest' | 'registered';
   nickname: string;
+  avatarEmoji?: string;
   privacy?: { showOnSquare: boolean; allowStrangerInteract: boolean; hidePetInfo: boolean };
   coins: number;
   diamonds: number;

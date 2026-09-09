@@ -33,6 +33,7 @@ export interface Friend {
   id: string;
   nickname: string;
   type: string;
+  avatarEmoji?: string;
   friendsSince?: string;
   isFriend?: boolean;
 }
@@ -85,6 +86,7 @@ interface SocialState {
   clearError: () => void;
   fetchPosts: (refresh?: boolean) => Promise<void>;
   createPost: (content: string, petId?: string) => Promise<void>;
+  deletePost: (postId: number) => Promise<void>;
   toggleLike: (postId: number) => Promise<void>;
   fetchComments: (postId: number) => Promise<void>;
   addComment: (postId: number, content: string) => Promise<void>;
@@ -155,6 +157,17 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     } catch (err: any) {
       set({ error: err.message });
       throw err; // 让 UI 层知道失败了
+    }
+  },
+
+  deletePost: async (postId: number) => {
+    try {
+      await apiFetch(`/social/posts/${postId}`, { method: 'DELETE' });
+      // 本地同步移除，评论弹窗若打开着该帖也一并关闭由 UI 层处理
+      set(state => ({ posts: state.posts.filter(p => p.id !== postId) }));
+    } catch (err: any) {
+      set({ error: err.message });
+      throw err;
     }
   },
 

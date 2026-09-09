@@ -24,7 +24,7 @@ function FriendCard({ friend, onVisit }: { friend: Friend; onVisit: () => void }
   return (
     <View style={styles.friendCard}>
       <View style={styles.friendAvatar}>
-        <Text style={styles.friendAvatarEmoji}>🐱</Text>
+        <Text style={styles.friendAvatarEmoji}>{friend.avatarEmoji || '🐱'}</Text>
       </View>
       <View style={styles.friendInfo}>
         <Text style={styles.friendName}>{friend.nickname}</Text>
@@ -238,7 +238,7 @@ export default function FriendsScreen() {
             {searchResults.map((u: Friend) => (
               <View key={u.id} style={styles.searchResultItem}>
                 <View style={styles.friendAvatar}>
-                  <Text style={styles.friendAvatarEmoji}>🐱</Text>
+                  <Text style={styles.friendAvatarEmoji}>{u.avatarEmoji || '🐱'}</Text>
                 </View>
                 <View style={styles.friendInfo}>
                   <Text style={styles.friendName}>{u.nickname}</Text>

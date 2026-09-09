@@ -24,10 +24,26 @@ import { FRAME_RING_COLORS } from '../../../config/appearance';
 // 子组件
 // ============================================================
 
-function PostCard({ post, onLike, onComment }: { post: Post; onLike: () => void; onComment: () => void }) {
+function PostCard({
+  post, isMine, onLike, onComment, onDelete,
+}: {
+  post: Post; isMine: boolean; onLike: () => void; onComment: () => void; onDelete: () => void;
+}) {
   const timeAgo = getTimeAgo(post.createdAt);
   // 作者头像：真实头像 emoji；作者宠物的头像框装备 → 彩色描边
   const frameRing = post.pet?.frameItem ? FRAME_RING_COLORS[post.pet.frameItem] : null;
+  // 两段点击确认删除（Alert.alert 在 Web 端为 no-op，用平台无关的交互）
+  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
+
+  const handleDelete = () => {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      setTimeout(() => setConfirmingDelete(false), 3000);
+      return;
+    }
+    setConfirmingDelete(false);
+    onDelete();
+  };
 
   return (
     <View style={styles.postCard}>
@@ -42,7 +58,7 @@ function PostCard({ post, onLike, onComment }: { post: Post; onLike: () => void;
         </View>
         {post.pet && (
           <View style={styles.petTag}>
-            <Text style={styles.petTagText}>🐾 {post.pet.name}</Text>
+            <Text style={styles.petTagText}>🐾 {post.pet.name} · {stageLabel(post.pet.stage)}</Text>
           </View>
         )}
       </View>
@@ -64,6 +80,14 @@ function PostCard({ post, onLike, onComment }: { post: Post; onLike: () => void;
           <Text style={styles.actionIcon}>💬</Text>
           <Text style={styles.actionCount}>{post.commentsCount}</Text>
         </TouchableOpacity>
+        {isMine && (
+          <TouchableOpacity style={styles.actionBtn} onPress={handleDelete}>
+            <Text style={styles.actionIcon}>{confirmingDelete ? '❓' : '🗑️'}</Text>
+            <Text style={[styles.actionCount, confirmingDelete && styles.deleteConfirmText]}>
+              {confirmingDelete ? '再点一次删除' : ''}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -157,13 +181,14 @@ function CommentModal({
 
 export default function SocialScreen() {
   const router = useRouter();
-  const { user } = usePetStore();
+  const { user, pet } = usePetStore();
   const {
-    posts, isLoadingPosts, hasMorePosts, fetchPosts, createPost, toggleLike, error, clearError,
+    posts, isLoadingPosts, hasMorePosts, fetchPosts, createPost, deletePost, toggleLike, error, clearError,
   } = useSocialStore();
 
   const [showCompose, setShowCompose] = useState(false);
   const [composeText, setComposeText] = useState('');
+  const [attachPet, setAttachPet] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [showComments, setShowComments] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -189,9 +214,20 @@ export default function SocialScreen() {
 
   const handlePublish = async () => {
     if (!composeText.trim()) return;
-    await createPost(composeText.trim());
+    await createPost(composeText.trim(), attachPet && pet ? pet.id : undefined);
     setComposeText('');
+    setAttachPet(false);
     setShowCompose(false);
+  };
+
+  const handleDeletePost = async (postId: number) => {
+    try {
+      await deletePost(postId);
+      // 正在看的评论弹窗对应帖子被删则一并关闭
+      if (selectedPost?.id === postId) setShowComments(false);
+    } catch {
+      // 失败信息已由 store 写入 error banner
+    }
   };
 
   const handleComment = (post: Post) => {
@@ -242,8 +278,10 @@ export default function SocialScreen() {
             <PostCard
               key={post.id}
               post={post}
+              isMine={!!user && post.author.id === user.id}
               onLike={() => toggleLike(post.id)}
               onComment={() => handleComment(post)}
+              onDelete={() => handleDeletePost(post.id)}
             />
           ))
         )}
@@ -276,7 +314,7 @@ export default function SocialScreen() {
 
           <View style={styles.composeBody}>
             <View style={styles.composeAvatar}>
-              <Text style={styles.composeAvatarText}>🐱</Text>
+              <Text style={styles.composeAvatarText}>{user?.avatarEmoji || '🐱'}</Text>
             </View>
             <TextInput
               style={styles.composeInput}
@@ -291,6 +329,16 @@ export default function SocialScreen() {
           </View>
 
           <View style={styles.composeFooter}>
+            {pet && (
+              <TouchableOpacity
+                style={[styles.petAttachChip, attachPet && styles.petAttachChipActive]}
+                onPress={() => setAttachPet(!attachPet)}
+              >
+                <Text style={[styles.petAttachText, attachPet && styles.petAttachTextActive]}>
+                  {attachPet ? '✓' : '+'} 🐾 和 {pet.name} 一起
+                </Text>
+              </TouchableOpacity>
+            )}
             <Text style={styles.composeCount}>{composeText.length}/500</Text>
           </View>
         </View>
@@ -316,6 +364,13 @@ function getTimeAgo(dateStr: string): string {
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}天前`;
   return new Date(dateStr).toLocaleDateString('zh-CN');
+}
+
+function stageLabel(stage: string): string {
+  if (stage === 'egg') return '宠物蛋';
+  if (stage === 'child') return '幼体';
+  if (stage === 'teen') return '少年';
+  return '成年';
 }
 
 // ============================================================
@@ -371,6 +426,7 @@ const styles = StyleSheet.create({
   actionIconActive: { transform: [{ scale: 1.1 }] },
   actionCount: { fontSize: 13, color: '#999' },
   actionCountActive: { color: '#FF6B6B', fontWeight: '600' },
+  deleteConfirmText: { color: '#FF6B6B', fontWeight: '600' },
   fab: {
     position: 'absolute',
     right: 20,
@@ -438,6 +494,17 @@ const styles = StyleSheet.create({
   composeAvatarText: { fontSize: 20 },
   composeInput: { flex: 1, fontSize: 15, color: '#444', lineHeight: 24, textAlignVertical: 'top' },
   composeFooter: { padding: 12, backgroundColor: '#FFF', alignItems: 'flex-end' },
+  petAttachChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F0F8FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    marginBottom: 8,
+  },
+  petAttachChipActive: { backgroundColor: '#E8F8F5' },
+  petAttachText: { fontSize: 13, color: '#54A0FF', fontWeight: '500' },
+  petAttachTextActive: { color: '#5A7A6A' },
   composeCount: { fontSize: 12, color: '#BBB' },
 
   // 评论
