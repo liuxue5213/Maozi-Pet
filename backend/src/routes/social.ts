@@ -7,6 +7,7 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
+import { todayStr } from '../utils/today';
 
 export const socialRouter = Router();
 
@@ -420,7 +421,7 @@ socialRouter.get('/friends/:friendId/visit', authMiddleware, (req: Request, res:
   `).all(friendId) as any[];
 
   // 我今天对这些宠物已用过的互动类型（前端据此置灰按钮）
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayStr();
   const visited = db.prepare(`
     SELECT pet_id, type FROM friend_visit_interactions
     WHERE visitor_id = ? AND owner_id = ? AND visit_date = ?
@@ -489,7 +490,7 @@ socialRouter.post('/friends/:friendId/pets/:petId/interact', authMiddleware, (re
     return;
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayStr();
   const effects = VISIT_EFFECTS[type];
   let myCoins = 0;
 
