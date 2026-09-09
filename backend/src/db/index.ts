@@ -453,6 +453,14 @@ const ITEM_DEFS = [
   { id: 'bubble_star', name: '星星气泡', category: 'bubble', icon: '🌟', description: '闪闪发光', price_coins: 80, rarity: 'common', shop_category: 'bubble', sort_order: 34 },
   { id: 'bubble_cat', name: '猫咪气泡', category: 'bubble', icon: '🐾', description: '爪印气泡', price_coins: 100, rarity: 'rare', shop_category: 'bubble', sort_order: 35 },
   { id: 'bubble_heart', name: '爱心气泡', category: 'bubble', icon: '💝', description: '满满爱意', price_coins: 120, rarity: 'rare', shop_category: 'bubble', sort_order: 36 },
+  // === 家园家具（shop_category=furniture：购买后可在背包-家园里摆放） ===
+  { id: 'fur_candle', name: '香薰蜡烛', category: 'furniture', icon: '🕯️', description: '安神的味道', price_coins: 40, rarity: 'common', shop_category: 'furniture', sort_order: 37 },
+  { id: 'fur_basket', name: '收纳篮', category: 'furniture', icon: '🧺', description: '毛线球的家', price_coins: 50, rarity: 'common', shop_category: 'furniture', sort_order: 38 },
+  { id: 'fur_plant', name: '绿植盆栽', category: 'furniture', icon: '🪴', description: '一抹生机', price_coins: 60, rarity: 'common', shop_category: 'furniture', sort_order: 39 },
+  { id: 'fur_bed', name: '舒软猫窝', category: 'furniture', icon: '🛏️', description: '睡个好朋友', price_coins: 90, rarity: 'common', shop_category: 'furniture', sort_order: 40 },
+  { id: 'fur_bookshelf', name: '小书架', category: 'furniture', icon: '📚', description: '陪你读书', price_coins: 100, rarity: 'rare', shop_category: 'furniture', sort_order: 41 },
+  { id: 'fur_sofa', name: '小沙发', category: 'furniture', icon: '🛋️', description: '一起瘫着', price_coins: 120, rarity: 'rare', shop_category: 'furniture', sort_order: 42 },
+  { id: 'fur_guitar', name: '小吉他', category: 'furniture', icon: '🎸', description: '偶尔弹一首', price_coins: 150, rarity: 'epic', shop_category: 'furniture', sort_order: 43 },
 ];
 
 // 家园场景

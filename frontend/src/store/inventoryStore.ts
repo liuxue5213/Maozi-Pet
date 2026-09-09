@@ -12,7 +12,7 @@ import { apiFetch } from '../config/env';
 export interface ItemDef {
   id: string;
   name: string;
-  category: 'hat' | 'clothing' | 'accessory' | 'effect' | 'skin' | 'frame' | 'bubble';
+  category: 'hat' | 'clothing' | 'accessory' | 'effect' | 'skin' | 'frame' | 'bubble' | 'furniture';
   icon: string;
   description?: string;
   priceCoins: number;
@@ -84,6 +84,8 @@ interface InventoryState {
   fetchScenes: () => Promise<void>;
   switchScene: (sceneId: string) => Promise<string>;
   fetchHome: () => Promise<void>;
+  /** 摆放/收起一件家具（持有校验在服务端），返回更新后的摆放列表 */
+  toggleFurniture: (itemId: string) => Promise<string[]>;
 
   // 图鉴
   fetchCollection: () => Promise<void>;
@@ -159,6 +161,20 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     });
     set({ currentScene: result.scene });
     return result.message;
+  },
+
+  // 摆放/收起一件家具：提交完整列表，服务端校验格式与持有后保存
+  toggleFurniture: async (itemId: string) => {
+    const current = get().furniture;
+    const next = current.includes(itemId)
+      ? current.filter(id => id !== itemId)
+      : [...current, itemId];
+    const result = await apiFetch<{ furniture: string[] }>('/inventory/home/furniture', {
+      method: 'POST',
+      body: JSON.stringify({ furniture: next }),
+    });
+    set({ furniture: result.furniture });
+    return result.furniture;
   },
 
   fetchHome: async () => {

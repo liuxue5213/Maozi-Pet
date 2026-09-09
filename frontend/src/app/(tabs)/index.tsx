@@ -351,7 +351,7 @@ function GuessModal({
     setError('');
     try {
       const result = await apiFetch<{
-        result: 'higher' | 'lower' | 'correct';
+        result: 'higher' | 'lower' | 'correct' | 'lost';
         attemptsUsed?: number;
         attemptsLeft?: number;
         secret?: number;
@@ -372,6 +372,14 @@ function GuessModal({
         } : g);
         if (typeof result.totalCoins === 'number') usePetStore.getState().updateCoins(result.totalCoins);
         await usePetStore.getState().fetchPet();
+      } else if (result.result === 'lost') {
+        // 次数用完：不惩罚（仍 +心情），公布谜底
+        setGame(g => g ? {
+          ...g,
+          finished: true,
+          attemptsLeft: 0,
+          history: [...g.history, { text: result.message, type: 'info' }],
+        } : g);
       } else {
         setGame(g => g ? {
           ...g,
@@ -407,6 +415,16 @@ function GuessModal({
             <Text style={styles.rpsClose}>✕</Text>
           </TouchableOpacity>
         </View>
+
+        {/* 开局失败也要让错误可见（game 为 null 时不再白屏弹窗） */}
+        {!game && (
+          <View style={styles.guessHistory}>
+            <Text style={styles.guessHistoryText}>{error || '正在开局…'}</Text>
+            <TouchableOpacity style={[styles.guessBtn, styles.guessRetryBtn]} onPress={startGame} disabled={busy}>
+              <Text style={styles.guessBtnText}>{busy ? '...' : '🔄 重试'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {game && (
           <>
@@ -1109,5 +1127,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     paddingVertical: 13,
   },
+  guessRetryBtn: { alignSelf: 'center', marginTop: 12 },
   guessBtnText: { fontSize: 15, fontWeight: '700', color: '#FFF' },
 });

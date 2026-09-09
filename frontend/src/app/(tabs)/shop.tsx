@@ -67,6 +67,7 @@ export default function ShopScreen() {
     { id: 'skin', name: '皮肤', icon: '🐱' },
     { id: 'frame', name: '头像框', icon: '🖼️' },
     { id: 'bubble', name: '气泡', icon: '💬' },
+    { id: 'furniture', name: '家具', icon: '🪑' },
   ];
 
   useFocusEffect(

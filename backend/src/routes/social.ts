@@ -489,9 +489,13 @@ socialRouter.post('/friends/:friendId/pets/:petId/interact', authMiddleware, (re
   }
 
   // 验证宠物属于好友且在养
-  const pet = db.prepare('SELECT id, name, is_retired FROM pets WHERE id = ? AND user_id = ?').get(petId, friendId) as any;
+  const pet = db.prepare('SELECT id, name, is_retired, is_sleeping FROM pets WHERE id = ? AND user_id = ?').get(petId, friendId) as any;
   if (!pet || pet.is_retired) {
     res.status(404).json({ error: '好友没有这只宠物' });
+    return;
+  }
+  if (pet.is_sleeping) {
+    res.status(400).json({ error: `${pet.name} 睡得正香，别吵醒它，明天再来串门吧 🌙` });
     return;
   }
 

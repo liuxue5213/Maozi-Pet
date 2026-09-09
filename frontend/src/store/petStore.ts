@@ -317,10 +317,12 @@ export const usePetStore = create<PetState>((set, get) => ({
   fetchTodayEvent: async () => {
     const { pet, todayEvent } = get();
     if (!pet || todayEvent) return;
+    // 睡觉中的宠物没有随机事件（后端也有守卫）
+    if (pet.isSleeping) return;
     try {
       const result = await apiFetch<{ event: string; reward: string; coinReward?: number; totalCoins?: number }>('/ai/event', {
         method: 'POST',
-        body: JSON.stringify({ personality: pet.personality, petState: pet.stats }),
+        body: JSON.stringify({ personality: pet.personality, petState: pet.stats, petId: pet.id }),
       });
       if (result?.event) {
         if (typeof result.totalCoins === 'number') {

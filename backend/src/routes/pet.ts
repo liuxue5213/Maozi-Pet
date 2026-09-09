@@ -338,7 +338,8 @@ petRouter.get('/:petId', authMiddleware, (req: Request, res: Response) => {
   const pet = applyOfflineDecay(rowToPet(row));
 
   // 如果有衰减，写回数据库
-  if (pet.updatedAt !== row.updated_at) {
+  // 睡觉中的宠物不写回：恢复量只按入睡锚点展示，唤醒时一次性结算，避免重复发体力
+  if (pet.updatedAt !== row.updated_at && !pet.isSleeping) {
     const updates = petToDb(pet);
     db.prepare(`
       UPDATE pets SET
@@ -688,10 +689,10 @@ petRouter.post('/:petId/guess/start', authMiddleware, (req: Request, res: Respon
 
   const today = todayStr();
 
-  // 续玩进行中的局
+  // 续玩进行中的局（按宠物过滤：退休/换宠物后旧局不可续，防止软锁）
   const active = db.prepare(
-    "SELECT id, attempts, max_attempts FROM guess_sessions WHERE user_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1"
-  ).get(userId) as any;
+    "SELECT id, attempts, max_attempts FROM guess_sessions WHERE user_id = ? AND pet_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1"
+  ).get(userId, petId) as any;
   if (active) {
     res.json({
       sessionId: active.id,
@@ -755,6 +756,10 @@ petRouter.post('/:petId/guess', authMiddleware, (req: Request, res: Response) =>
   }
   if (row.is_sleeping) {
     res.status(400).json({ error: `${row.name} 睡着啦，先叫醒它吧 🌙` });
+    return;
+  }
+  if (row.is_retired) {
+    res.status(400).json({ error: '退休的帽子要安心养老啦' });
     return;
   }
 
@@ -833,13 +838,13 @@ petRouter.post('/:petId/guess', authMiddleware, (req: Request, res: Response) =>
 
     if (won) bumpTaskProgress(userId, 'interact3');
 
-    let message = getGuessWinMessage(row.name, attemptsUsed);
-    if (petOut.level > pet.level) message += ` ⬆️ 升级到 Lv.${petOut.level}！`;
+    let message = won ? getGuessWinMessage(row.name, attemptsUsed) : getGuessLoseMessage(row.name, session.secret);
+    if (won && petOut.level > pet.level) message += ` ⬆️ 升级到 Lv.${petOut.level}！`;
     if (coinReward > 0) message += ` 🪙+${coinReward}`;
     const userCoins = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any)?.coins || 0;
 
     res.json({
-      result: 'correct',
+      result: won ? 'correct' : 'lost',
       secret: session.secret,
       attemptsUsed,
       pet: petOut,
@@ -879,6 +884,8 @@ petRouter.post('/:petId/retire', authMiddleware, (req: Request, res: Response) =
   }
 
   db.prepare('UPDATE pets SET is_retired = 1, is_sleeping = 0, sleep_started_at = NULL, updated_at = ? WHERE id = ?').run(new Date().toISOString(), petId);
+  // 清掉该宠物未完成的猜数字局（否则 resign 后无法再开局）
+  db.prepare("UPDATE guess_sessions SET status = 'abandoned', updated_at = ? WHERE pet_id = ? AND status = 'active'").run(new Date().toISOString(), petId);
 
   res.json({
     message: `🌟 ${row.name} 光荣退休，已入驻宠物图鉴档案馆！可以孵化新宠物啦~`,

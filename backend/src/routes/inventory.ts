@@ -6,6 +6,7 @@
 import { Router, Request, Response } from 'express';
 import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
+import { sanitizeFurniturePayload } from '../utils/furniture';
 
 export const inventoryRouter = Router();
 
@@ -253,10 +254,24 @@ inventoryRouter.post('/home/scene', authMiddleware, (req: Request, res: Response
 // 更新家具布置
 inventoryRouter.post('/home/furniture', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
-  const { furniture } = req.body;
 
-  if (!Array.isArray(furniture)) {
-    res.status(400).json({ error: '无效的数据格式' });
+  // 校验载荷：字符串 id 数组/去重/上限 30（utils/furniture.ts，可单测）
+  const furniture = sanitizeFurniturePayload(req.body.furniture);
+  if (!furniture) {
+    res.status(400).json({ error: '无效的家具数据（需要家具 id 数组，最多 30 件）' });
+    return;
+  }
+
+  // 持有校验：只能摆放自己购买过的家具（防摆放未拥有项）
+  const owned = new Set(
+    (db.prepare(`
+      SELECT ui.item_id FROM user_items ui
+      JOIN item_defs ide ON ide.id = ui.item_id AND ide.category = 'furniture'
+      WHERE ui.user_id = ?
+    `).all(userId) as any[]).map(r => r.item_id),
+  );
+  if (furniture.some(fid => !owned.has(fid))) {
+    res.status(400).json({ error: '包含未拥有的家具，先去商城看看吧' });
     return;
   }
 

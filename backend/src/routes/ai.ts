@@ -112,6 +112,7 @@ aiRouter.post('/chat', authMiddleware, async (req: Request, res: Response) => {
           .run(userId, petId, 'user', lastMessage.content, now);
         db.prepare('INSERT INTO chat_messages (user_id, pet_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)')
           .run(userId, petId, 'assistant', reply, now);
+        cleanupOldMessages(userId, petId);
         res.json({ reply, timestamp: now, sleeping: true });
         return;
       }
@@ -303,7 +304,16 @@ aiRouter.delete('/memories/:petId/:memoryId', authMiddleware, (req: Request, res
 aiRouter.post('/event', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = getCurrentUserId(req);
-    const { personality = 'cute', petState } = req.body;
+    const { personality = 'cute', petState, petId } = req.body;
+
+    // 睡觉中的宠物不触发随机事件（与"睡觉=冻结"语义一致，防睡觉期间刷金币）
+    if (petId) {
+      const sleepRow = db.prepare('SELECT is_sleeping, name FROM pets WHERE id = ? AND user_id = ?').get(petId, userId) as any;
+      if (sleepRow?.is_sleeping) {
+        res.json({ event: `${sleepRow.name} 睡得正香，梦里没有新事件～`, reward: '', animation: 'dream', coinReward: 0, sleeping: true });
+        return;
+      }
+    }
 
     // 事件生成同样计入每日 AI 调用限额（防刷）
     if (isDailyLimitReached(userId)) {

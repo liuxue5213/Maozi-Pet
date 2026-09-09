@@ -74,9 +74,9 @@ const EQUIP_SLOTS: { key: string; label: string }[] = [
 export default function InventoryScreen() {
   const { pet } = usePetStore();
   const {
-    backpack, equips, currentScene, scenes, collection,
+    backpack, equips, currentScene, scenes, collection, furniture,
     fetchBackpack, equipItem, unequipItem, fetchEquips,
-    fetchScenes, switchScene, fetchCollection,
+    fetchScenes, switchScene, fetchCollection, toggleFurniture,
   } = useInventoryStore();
 
   const [activeTab, setActiveTab] = useState<TabType>('equip');
@@ -113,6 +113,16 @@ export default function InventoryScreen() {
     try {
       const msg = await switchScene(sceneId);
       showMessage(msg);
+    } catch (err: any) {
+      showMessage(err.message);
+    }
+  };
+
+  // 摆放/收起家具（服务端校验持有，失败提示）
+  const handleToggleFurniture = async (itemId: string) => {
+    try {
+      const next = await toggleFurniture(itemId);
+      showMessage(next.includes(itemId) ? '已摆进家园啦~' : '已收起');
     } catch (err: any) {
       showMessage(err.message);
     }
@@ -239,6 +249,39 @@ export default function InventoryScreen() {
                 onSelect={() => handleSwitchScene(scene.id)}
               />
             ))}
+
+            {/* 家具布置：商城「家具」分类购买后，在这里摆放/收起 */}
+            <Text style={styles.sectionTitle}>家具布置</Text>
+            {(() => {
+              const ownedFurniture = backpack.filter(i => i.category === 'furniture');
+              if (ownedFurniture.length === 0) {
+                return (
+                  <Text style={styles.furnitureEmptyHint}>
+                    还没有家具~ 去商城「🪑 家具」分类逛逛吧
+                  </Text>
+                );
+              }
+              return (
+                <View style={styles.furnitureGrid}>
+                  {ownedFurniture.map(item => {
+                    const placed = furniture.includes(item.id);
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={[styles.furnitureCard, placed && styles.furnitureCardPlaced]}
+                        onPress={() => handleToggleFurniture(item.id)}
+                      >
+                        <Text style={styles.furnitureIcon}>{item.icon}</Text>
+                        <Text style={styles.furnitureName}>{item.name}</Text>
+                        <Text style={[styles.furnitureState, placed && styles.furnitureStatePlaced]}>
+                          {placed ? '已摆放' : '收起中'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              );
+            })()}
           </View>
         </ScrollView>
       )}
@@ -440,4 +483,20 @@ const styles = StyleSheet.create({
   collectionItemIconLocked: { opacity: 0.3 },
   collectionItemName: { fontSize: 10, color: '#777', marginTop: 4, textAlign: 'center' },
   collectionItemNameLocked: { color: '#CCC' },
+  furnitureEmptyHint: { fontSize: 13, color: '#C0A8A8', paddingVertical: 8 },
+  furnitureGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingBottom: 20 },
+  furnitureCard: {
+    width: 96,
+    borderRadius: 14,
+    backgroundColor: '#FFF',
+    padding: 12,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  furnitureCardPlaced: { borderColor: '#FF9F43', backgroundColor: '#FFF9F0' },
+  furnitureIcon: { fontSize: 28 },
+  furnitureName: { fontSize: 12, color: '#5A4A4A', marginTop: 6, fontWeight: '500' },
+  furnitureState: { fontSize: 10, color: '#BBB', marginTop: 3 },
+  furnitureStatePlaced: { color: '#FF9F43', fontWeight: '600' },
 });
