@@ -196,6 +196,8 @@ export default function HomeScreen() {
     const message = await interact(action);
     setInteractMessage(message);
     setTimeout(() => setInteractMessage(''), 3000);
+    // 互动会推进每日任务进度，即时刷新任务卡片（补强：原先只在页面聚焦时拉取）
+    loadTasks();
   };
 
   // 加载中
