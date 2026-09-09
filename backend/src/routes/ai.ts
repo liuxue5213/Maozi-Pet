@@ -96,6 +96,27 @@ aiRouter.post('/chat', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
+    // --- 睡觉中的宠物：迷糊 Zzz 回复（不调 AI、不消耗限额、不计任务/记忆）---
+    if (petId) {
+      const sleepRow = db.prepare('SELECT name, is_sleeping FROM pets WHERE id = ? AND user_id = ?').get(petId, userId) as any;
+      if (sleepRow?.is_sleeping) {
+        const name = sleepRow.name;
+        const zzz = [
+          `Zzz…（${name}睡得正香，尾巴盖住了鼻子）`,
+          `唔…Zzz…（${name}翻了个身，梦到了小鱼干）`,
+          `Zzz…呼噜…（${name}的耳朵动了动，没有醒来。它醒来看得到你的话哦）`,
+        ];
+        const reply = zzz[Math.floor(Math.random() * zzz.length)];
+        const now = new Date().toISOString();
+        db.prepare('INSERT INTO chat_messages (user_id, pet_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)')
+          .run(userId, petId, 'user', lastMessage.content, now);
+        db.prepare('INSERT INTO chat_messages (user_id, pet_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)')
+          .run(userId, petId, 'assistant', reply, now);
+        res.json({ reply, timestamp: now, sleeping: true });
+        return;
+      }
+    }
+
     // 每日消息上限检查（chat 与 event 共用同一计数，与 petId 无关）
     if (isDailyLimitReached(userId)) {
       res.status(429).json({ error: '今日消息已达上限，明天再来和帽子玩吧~' });

@@ -82,7 +82,7 @@ const EQUIP_POSITIONS: Record<string, { top?: number; bottom?: number; left?: nu
   effect: { top: 28, left: 14 },
 };
 
-function PetAvatar({ stage, mood, equips }: { stage: string; mood: number; equips: EquippedItem[] }) {
+function PetAvatar({ stage, mood, equips, isSleeping }: { stage: string; mood: number; equips: EquippedItem[]; isSleeping: boolean }) {
   const scaleAnim = React.useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
@@ -96,6 +96,7 @@ function PetAvatar({ stage, mood, equips }: { stage: string; mood: number; equip
 
   const getPetEmoji = () => {
     if (stage === 'egg') return '🥚';
+    if (isSleeping) return '😴';
     if (mood < 30) return '😿';
     if (stage === 'adult') return '😺';
     if (stage === 'teen') return '🐱';
@@ -116,13 +117,18 @@ function PetAvatar({ stage, mood, equips }: { stage: string; mood: number; equip
       ]}
     >
       <Text style={styles.petEmoji}>{getPetEmoji()}</Text>
+      {/* 睡觉状态：头顶飘 💤 */}
+      {isSleeping && stage !== 'egg' && (
+        <Text style={[styles.equipIcon, EQUIP_POSITIONS.hat]}>💤</Text>
+      )}
       {/* 渲染已装备的装扮（只画有坐标的槽位，避免未知槽位叠在头饰位置） */}
-      {equips.filter(e => EQUIP_POSITIONS[e.slot]).map(e => (
+      {equips.filter(e => EQUIP_POSITIONS[e.slot] && !(isSleeping && e.slot === 'hat')).map(e => (
         <Text key={e.slot} style={[styles.equipIcon, EQUIP_POSITIONS[e.slot]]}>
           {e.icon}
         </Text>
       ))}
       {stage === 'egg' && <Text style={styles.stageHint}>点击孵化 ✨</Text>}
+      {isSleeping && stage !== 'egg' && <Text style={styles.stageHint}>Zzz… 睡得正香</Text>}
     </Animated.View>
   );
 }
@@ -139,9 +145,14 @@ function StatBar({ label, value, color }: { label: string; value: number; color:
   );
 }
 
-function InteractionButton({ action, icon, onPress }: { action: string; icon: string; onPress: () => void }) {
+function InteractionButton({ action, icon, onPress, disabled }: { action: string; icon: string; onPress: () => void; disabled?: boolean }) {
   return (
-    <TouchableOpacity style={styles.actionBtn} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity
+      style={[styles.actionBtn, disabled && styles.actionBtnDisabled]}
+      onPress={onPress}
+      activeOpacity={0.7}
+      disabled={disabled}
+    >
       <Text style={styles.actionIcon}>{icon}</Text>
       <Text style={styles.actionLabel}>{INTERACTION_LABELS[action] || action}</Text>
     </TouchableOpacity>
@@ -269,6 +280,7 @@ export default function HomeScreen() {
   const {
     pet, isLoading, isInteracting, error, user,
     todayEvent, fetchPet, interact, clearEvent, clearError, logout, fetchUser, fetchTodayEvent,
+    sleepPet, wakePet,
   } = usePetStore();
   const {
     currentScene, equips, fetchEquips: fetchPetEquips, fetchScenes,
@@ -357,6 +369,15 @@ export default function HomeScreen() {
     loadTasks();
   };
 
+  // 哄睡 / 叫醒（作息循环：睡觉回体力，醒来精神满满）
+  const isSleeping = !!pet?.isSleeping;
+  const handleSleepToggle = async () => {
+    if (!pet) return;
+    const message = isSleeping ? await wakePet() : await sleepPet();
+    setInteractMessage(message);
+    setTimeout(() => setInteractMessage(''), 4000);
+  };
+
   // 加载中
   if (isLoading && !pet) {
     return (
@@ -427,7 +448,7 @@ export default function HomeScreen() {
       )}
 
       {/* 宠物展示区 */}
-      <PetAvatar stage={pet.stage} mood={pet.stats.mood} equips={equips} />
+      <PetAvatar stage={pet.stage} mood={pet.stats.mood} equips={equips} isSleeping={isSleeping} />
 
       {/* 互动反馈消息 */}
       {interactMessage ? (
@@ -436,18 +457,33 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      {/* 互动按钮 */}
+      {/* 互动按钮（睡觉时禁用日常互动，只留叫醒） */}
       <View style={styles.actionRow}>
-        <InteractionButton action="feed" icon="🍖" onPress={() => handleInteract('feed')} />
-        <InteractionButton action="clean" icon="🛁" onPress={() => handleInteract('clean')} />
-        <InteractionButton action="play" icon="🎾" onPress={() => handleInteract('play')} />
-        <InteractionButton action="comfort" icon="💕" onPress={() => handleInteract('comfort')} />
-        <InteractionButton action="pet" icon="✋" onPress={() => handleInteract('pet')} />
-        {/* 蛋阶段不会猜拳，成年玩法 */}
-        {pet.stage !== 'egg' && (
+        {(['feed', 'clean', 'play', 'comfort', 'pet'] as const).map(action => (
+          <InteractionButton
+            key={action}
+            action={action}
+            icon={{ feed: '🍖', clean: '🛁', play: '🎾', comfort: '💕', pet: '✋' }[action]}
+            onPress={() => handleInteract(action)}
+            disabled={isSleeping}
+          />
+        ))}
+        {/* 蛋阶段不会猜拳，成年玩法；睡觉时不玩 */}
+        {pet.stage !== 'egg' && !isSleeping && (
           <TouchableOpacity style={styles.actionBtn} onPress={() => setRpsVisible(true)} activeOpacity={0.7}>
             <Text style={styles.actionIcon}>🎮</Text>
             <Text style={styles.actionLabel}>猜拳</Text>
+          </TouchableOpacity>
+        )}
+        {/* 作息入口：哄睡 / 叫醒（蛋不需要睡觉） */}
+        {pet.stage !== 'egg' && (
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.sleepBtn]}
+            onPress={handleSleepToggle}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.actionIcon}>{isSleeping ? '☀️' : '🌙'}</Text>
+            <Text style={styles.actionLabel}>{isSleeping ? '叫醒' : '哄睡'}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -662,6 +698,8 @@ const styles = StyleSheet.create({
   },
   actionIcon: { fontSize: 24 },
   actionLabel: { fontSize: 10, color: '#999', marginTop: 2 },
+  actionBtnDisabled: { opacity: 0.35 },
+  sleepBtn: { backgroundColor: '#EDE8FF' },
   statsPanel: {
     width: '100%',
     backgroundColor: '#FFFFFF',

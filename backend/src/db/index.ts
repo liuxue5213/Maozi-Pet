@@ -72,6 +72,8 @@ db.exec(`
     appearance TEXT NOT NULL DEFAULT '{}',
     total_interactions INTEGER NOT NULL DEFAULT 0,
     is_retired INTEGER NOT NULL DEFAULT 0,
+    is_sleeping INTEGER NOT NULL DEFAULT 0,
+    sleep_started_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -356,6 +358,21 @@ db.exec(`
     PRIMARY KEY (pet_id, kind, sent_date)
   );
 `);
+
+// ============================================================
+// 轻量列迁移：老库补新列（幂等）
+// ============================================================
+
+function ensureColumn(table: string, column: string, ddl: string): void {
+  const cols = (db.pragma(`table_info(${table})`) as any[]).map((c: any) => c.name);
+  if (!cols.includes(column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  }
+}
+
+// 睡觉作息系统（Round 8）
+ensureColumn('pets', 'is_sleeping', 'is_sleeping INTEGER NOT NULL DEFAULT 0');
+ensureColumn('pets', 'sleep_started_at', 'sleep_started_at TEXT');
 
 // ============================================================
 // 初始数据：装扮物品 + 家园场景

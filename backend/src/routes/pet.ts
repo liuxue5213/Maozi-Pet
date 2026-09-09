@@ -8,6 +8,7 @@ import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 import { todayStr } from '../utils/today';
 import { bumpTaskProgress } from '../utils/tasks';
+import { applySleepRecovery, SLEEP_CONFIG } from '../utils/sleep';
 import {
   isRpsChoice, randomChoice, resolveRps, getRpsMessage,
   RPS_MAX_PLAYS_PER_DAY, RPS_REWARDS, RPS_ENERGY_COST,
@@ -79,6 +80,8 @@ interface PetData {
   updatedAt: string;
   totalInteractions: number;
   isRetired: boolean;
+  isSleeping: boolean;
+  sleepStartedAt: string | null;
 }
 
 // ============================================================
@@ -101,6 +104,8 @@ interface PetRow {
   appearance: string;
   total_interactions: number;
   is_retired: number;
+  is_sleeping: number;
+  sleep_started_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -125,6 +130,8 @@ function rowToPet(row: PetRow): PetData {
     updatedAt: row.updated_at,
     totalInteractions: row.total_interactions,
     isRetired: !!row.is_retired,
+    isSleeping: !!row.is_sleeping,
+    sleepStartedAt: row.sleep_started_at,
   };
 }
 
@@ -144,6 +151,15 @@ function petToDb(pet: PetData): Record<string, any> {
 
 function applyOfflineDecay(pet: PetData): PetData {
   const now = Date.now();
+
+  // 睡觉中的宠物：按睡觉规则结算（体力恢复 + 低耗衰减），锚点是入睡时刻而非 updated_at
+  if (pet.isSleeping && pet.sleepStartedAt) {
+    const startedAt = new Date(pet.sleepStartedAt).getTime();
+    if (now - startedAt < DECAY_INTERVAL_MS) return pet; // 不足一个结算步长，避免无效写回
+    const result = applySleepRecovery(pet.stats, pet.sleepStartedAt, new Date(now).toISOString());
+    return { ...pet, stats: result.stats, updatedAt: new Date(now).toISOString() };
+  }
+
   const lastUpdate = new Date(pet.updatedAt).getTime();
   const elapsed = now - lastUpdate;
   const intervals = Math.floor(elapsed / DECAY_INTERVAL_MS);
@@ -284,6 +300,8 @@ petRouter.post('/create', authMiddleware, (req: Request, res: Response) => {
     updatedAt: now,
     totalInteractions: 0,
     isRetired: false,
+    isSleeping: false,
+    sleepStartedAt: null,
   };
 
   db.prepare(`
@@ -348,6 +366,12 @@ petRouter.post('/:petId/interact', authMiddleware, (req: Request, res: Response)
   }
 
   let pet = applyOfflineDecay(rowToPet(row));
+
+  // 睡觉中不能互动（先叫醒）
+  if (pet.isSleeping) {
+    res.status(400).json({ error: `${pet.name} 睡得正香，先叫醒它吧 🌙` });
+    return;
+  }
 
   // 执行互动
   const result = applyInteraction(pet, action);
@@ -439,6 +463,10 @@ petRouter.post('/:petId/rps', authMiddleware, (req: Request, res: Response) => {
   }
   if (row.stage === 'egg') {
     res.status(400).json({ error: '蛋蛋还不会猜拳，先孵化吧~' });
+    return;
+  }
+  if (row.is_sleeping) {
+    res.status(400).json({ error: `${row.name} 睡着啦，别让它梦游猜拳 🌙` });
     return;
   }
 
@@ -536,6 +564,96 @@ petRouter.post('/:petId/rps', authMiddleware, (req: Request, res: Response) => {
   });
 });
 
+// 哄睡：进入睡觉状态（睡觉期间体力恢复、消耗减慢）
+petRouter.post('/:petId/sleep', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { petId } = req.params;
+
+  const row = db.prepare('SELECT * FROM pets WHERE id = ? AND user_id = ?').get(petId, userId) as PetRow | undefined;
+  if (!row) {
+    res.status(404).json({ error: '宠物不存在' });
+    return;
+  }
+  if (row.is_retired) {
+    res.status(400).json({ error: '退休的帽子在档案馆里安睡呢' });
+    return;
+  }
+  if (row.stage === 'egg') {
+    res.status(400).json({ error: '蛋蛋不需要睡觉，快孵化它吧' });
+    return;
+  }
+  if (row.is_sleeping) {
+    res.status(400).json({ error: `${row.name} 已经睡着啦` });
+    return;
+  }
+
+  // 先结算清醒期衰减，再入睡（避免清醒期消耗被睡觉恢复覆盖）
+  const awakePet = applyOfflineDecay(rowToPet(row));
+  const now = new Date().toISOString();
+  const updates = petToDb(awakePet);
+
+  db.prepare(`
+    UPDATE pets SET
+      stats_hunger = ?, stats_cleanliness = ?, stats_mood = ?,
+      stats_energy = ?, stats_health = ?, updated_at = ?,
+      is_sleeping = 1, sleep_started_at = ?
+    WHERE id = ?
+  `).run(updates.stats_hunger, updates.stats_cleanliness, updates.stats_mood,
+         updates.stats_energy, updates.stats_health, now, now, petId);
+
+  res.json({
+    pet: { ...awakePet, isSleeping: true, sleepStartedAt: now },
+    message: `🌙 晚安，${row.name}睡着了…（睡觉时体力会慢慢恢复）`,
+  });
+});
+
+// 叫醒：结算睡觉期间的恢复，返回恢复明细
+petRouter.post('/:petId/wake', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { petId } = req.params;
+
+  const row = db.prepare('SELECT * FROM pets WHERE id = ? AND user_id = ?').get(petId, userId) as PetRow | undefined;
+  if (!row) {
+    res.status(404).json({ error: '宠物不存在' });
+    return;
+  }
+  if (!row.is_sleeping) {
+    res.status(400).json({ error: `${row.name} 醒着呢，不用叫` });
+    return;
+  }
+
+  const pet = rowToPet(row);
+  const result = applySleepRecovery(pet.stats, pet.sleepStartedAt || pet.updatedAt);
+  const stats = result.stats;
+  // 睡饱心情奖励：一次性 +5（睡觉期间心情冻结，醒时精神好）
+  stats.mood = Math.min(100, stats.mood + 5);
+
+  const now = new Date().toISOString();
+  const updates = petToDb({ ...pet, stats });
+  db.prepare(`
+    UPDATE pets SET
+      stats_hunger = ?, stats_cleanliness = ?, stats_mood = ?,
+      stats_energy = ?, stats_health = ?, updated_at = ?,
+      is_sleeping = 0, sleep_started_at = NULL
+    WHERE id = ?
+  `).run(updates.stats_hunger, updates.stats_cleanliness, updates.stats_mood,
+         updates.stats_energy, updates.stats_health, now, petId);
+
+  const energyRecovered = Math.max(0, Math.round(stats.energy - pet.stats.energy));
+  const minutes = result.minutesAsleep;
+  const durationText = minutes >= 60 ? `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分` : `${minutes} 分钟`;
+  const message = minutes < 1
+    ? `☀️ ${row.name} 揉揉眼睛醒了（才刚睡着呀）`
+    : `☀️ ${row.name} 睡了 ${durationText}，精神满满！⚡体力 +${energyRecovered} 😊心情 +5`;
+
+  res.json({
+    pet: { ...pet, stats, isSleeping: false, sleepStartedAt: null, updatedAt: now },
+    message,
+    minutesAsleep: minutes,
+    energyRecovered,
+  });
+});
+
 // 退休宠物
 petRouter.post('/:petId/retire', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
@@ -552,7 +670,7 @@ petRouter.post('/:petId/retire', authMiddleware, (req: Request, res: Response) =
     return;
   }
 
-  db.prepare('UPDATE pets SET is_retired = 1, updated_at = ? WHERE id = ?').run(new Date().toISOString(), petId);
+  db.prepare('UPDATE pets SET is_retired = 1, is_sleeping = 0, sleep_started_at = NULL, updated_at = ? WHERE id = ?').run(new Date().toISOString(), petId);
 
   res.json({
     message: `🌟 ${row.name} 光荣退休，已入驻宠物图鉴档案馆！可以孵化新宠物啦~`,

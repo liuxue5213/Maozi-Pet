@@ -140,6 +140,13 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* 睡觉提示：此时发消息只会收到 Zzz 回复 */}
+      {pet.isSleeping && (
+        <View style={styles.sleepBanner}>
+          <Text style={styles.sleepBannerText}>😴 {pet.name} 睡得正香，它醒来看得到你的话</Text>
+        </View>
+      )}
+
       <FlatList
         ref={flatListRef}
         data={chatHistory}
@@ -265,6 +272,15 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   memoryBtnText: { fontSize: 13, color: '#8A6A6A' },
+  sleepBanner: {
+    marginHorizontal: 16,
+    marginBottom: 6,
+    backgroundColor: '#EDE8FF',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  sleepBannerText: { fontSize: 12, color: '#5F27CD' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   modalSheet: {
     backgroundColor: '#FFF',

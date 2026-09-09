@@ -63,3 +63,19 @@
 - **aidorable 免打扰原则**：频繁推送有害，需免打扰时段与粒度设置 → 已按"每宠物每类型每日 1 条"落地，免打扰时段 UI 列 P3
 
 来源：[Pushwoosh](https://www.pushwoosh.com/zh/blog/game-app-push-notifications/)、[Reddit](https://www.reddit.com/r/gamemaker/comments/1j27pik/handling_the_passage_of_time_in_a_virtual_pet/)、[Apple](https://apps.apple.com/us/iphone/story/id1350681703?l=zh-Hans-CN)、[知乎-QQ宠物](https://zhuanlan.zhihu.com/p/2068773516984447500)、[aidorable](https://aidorable.ai)
+
+## 2026-09-10 第二夜迭代（Run 5，03:15 检索）
+
+**2026 虚拟宠物市场新动态**：
+
+| 竞品/趋势 | 核心做法 | 对本项目的启示 |
+|------|---------|------------|
+| Finch 自我关怀宠物 | 用户完成每日健康任务（心情记录/日志）→ 宠物成长，留存标杆案例 | 印证每日任务方向；「宠物依赖你」是最强留存机制（Yu-kai Chou：胜过排行榜等所有机制） |
+| Friends by Slay（Pengu） | 独自或与好友共同养成 AI 宠物，印度等新兴市场爆发 | 好友串门/托管方向正确 |
+| Sweekar（Takway，CES 2026） | AI 驱动的拓麻歌子式口袋宠物 | AI+养成融合已是赛道共识 |
+| 实体联动（Loona/Aura 机器人） | 虚拟宠物与实体机器人喂食/照料互通 | 重硬件，不做 |
+| **睡眠-宠物绑定**（ResearchGate 研究） | 宠物成长与用户睡眠-觉醒行为绑定 → 正向改变作息习惯 | 🔴 本项目 energy 只有衰减无恢复渠道、无作息循环——**睡觉/哄睡系统**是拓麻歌子级标配，立项 Round 8 |
+
+**结论**：睡觉作息系统补齐养成循环（白天互动消耗体力 → 夜里哄睡恢复）；「装扮可见性」修复（Round 7）回应「只卖颜值」定位的付费信任。
+
+来源：[TheSmartSnout-2026 虚拟宠物指南](https://thesmartsnout.com/2026/02/21/virtual-pet-apps-guide-2026-ai-coparenting/)、[ACM-Brainy 虚拟宠物数字健康](https://dl.acm.org/doi/10.1145/3811427.3811476)、[Livemint-新兴市场宠物 App](https://www.livemint.com/)

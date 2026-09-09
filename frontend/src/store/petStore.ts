@@ -32,6 +32,8 @@ export interface Pet {
   updatedAt: string;
   totalInteractions: number;
   isRetired: boolean;
+  isSleeping?: boolean;
+  sleepStartedAt?: string | null;
 }
 
 export interface ChatMessage {
@@ -103,6 +105,8 @@ interface PetState {
   createPet: (name: string, personality: Personality) => Promise<void>;
   fetchPet: () => Promise<void>;
   interact: (action: 'feed' | 'clean' | 'play' | 'comfort' | 'pet') => Promise<string>;
+  sleepPet: () => Promise<string>;
+  wakePet: () => Promise<string>;
   sendMessage: (text: string) => Promise<void>;
   loadHistory: (petId: string) => Promise<void>;
   fetchTodayEvent: () => Promise<void>;
@@ -210,6 +214,33 @@ export const usePetStore = create<PetState>((set, get) => ({
       return '操作失败，请重试';
     } finally {
       set({ isInteracting: false });
+    }
+  },
+
+  // 哄睡 / 叫醒（睡觉期间体力恢复、消耗减慢，唤醒返回恢复明细）
+  sleepPet: async () => {
+    const pet = get().pet;
+    if (!pet) return '还没有宠物喵~';
+    try {
+      const result = await apiFetch<{ pet: Pet; message: string }>(`/pet/${pet.id}/sleep`, { method: 'POST' });
+      set({ pet: { ...result.pet, isSleeping: true } });
+      return result.message;
+    } catch (err: any) {
+      set({ error: err.message });
+      return err.message || '哄睡失败，请重试';
+    }
+  },
+
+  wakePet: async () => {
+    const pet = get().pet;
+    if (!pet) return '还没有宠物喵~';
+    try {
+      const result = await apiFetch<{ pet: Pet; message: string; minutesAsleep: number; energyRecovered: number }>(`/pet/${pet.id}/wake`, { method: 'POST' });
+      set({ pet: { ...result.pet, isSleeping: false, sleepStartedAt: null } });
+      return result.message;
+    } catch (err: any) {
+      set({ error: err.message });
+      return err.message || '叫醒失败，请重试';
     }
   },
 
