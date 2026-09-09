@@ -398,6 +398,10 @@ function ensureColumn(table: string, column: string, ddl: string): void {
 ensureColumn('pets', 'is_sleeping', 'is_sleeping INTEGER NOT NULL DEFAULT 0');
 ensureColumn('pets', 'sleep_started_at', 'sleep_started_at TEXT');
 
+// 推送免打扰时段（Round 13，"HH:MM" 格式，NULL = 不启用）
+ensureColumn('users', 'push_quiet_start', 'push_quiet_start TEXT');
+ensureColumn('users', 'push_quiet_end', 'push_quiet_end TEXT');
+
 // ============================================================
 // 初始数据：装扮物品 + 家园场景
 // ============================================================

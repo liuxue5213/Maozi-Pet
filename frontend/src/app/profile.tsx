@@ -40,17 +40,60 @@ export default function ProfileScreen() {
   const [editNickname, setEditNickname] = useState('');
   const [editBio, setEditBio] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  // 推送免打扰时段（HH:MM）
+  const [quietStart, setQuietStart] = useState('');
+  const [quietEnd, setQuietEnd] = useState('');
+  const [quietSaving, setQuietSaving] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       fetchProfile();
-      // 头像框装扮：进页面时拉一次当前宠物的装备
+      // 推送免打扰设置 + 头像框装扮：进页面时拉一次当前宠物的装备
       const currentPet = usePetStore.getState().pet;
       if (currentPet) {
         useInventoryStore.getState().fetchEquips(currentPet.id);
       }
+      apiFetch<{ quietStart: string | null; quietEnd: string | null }>('/push/settings')
+        .then(s => {
+          setQuietStart(s.quietStart || '');
+          setQuietEnd(s.quietEnd || '');
+        })
+        .catch(() => {});
     }, [])
   );
+
+  // 保存免打扰时段（非法输入由后端归一为关闭）
+  const handleSaveQuietHours = async () => {
+    setQuietSaving(true);
+    try {
+      const result = await apiFetch<{ message: string }>('/push/settings', {
+        method: 'POST',
+        body: JSON.stringify({ quietStart: quietStart.trim(), quietEnd: quietEnd.trim() }),
+      });
+      Alert.alert('提示', result.message);
+    } catch (err: any) {
+      Alert.alert('提示', err.message || '保存失败，请重试');
+    } finally {
+      setQuietSaving(false);
+    }
+  };
+
+  const handleClearQuietHours = async () => {
+    setQuietSaving(true);
+    try {
+      await apiFetch('/push/settings', {
+        method: 'POST',
+        body: JSON.stringify({ quietStart: null, quietEnd: null }),
+      });
+      setQuietStart('');
+      setQuietEnd('');
+      Alert.alert('提示', '免打扰已关闭');
+    } catch {
+      Alert.alert('提示', '操作失败，请重试');
+    } finally {
+      setQuietSaving(false);
+    }
+  };
 
   const fetchProfile = async () => {
     try {
@@ -234,6 +277,37 @@ export default function ProfileScreen() {
         />
       </View>
 
+      {/* 推送免打扰时段 */}
+      <View style={styles.settingsCard}>
+        <Text style={styles.settingsTitle}>🌙 推送免打扰</Text>
+        <Text style={styles.quietHint}>该时段内「帽子想你了」推送保持安静（支持跨零点，如 22:00 ~ 08:00）</Text>
+        <View style={styles.quietRow}>
+          <TextInput
+            style={styles.quietInput}
+            value={quietStart}
+            onChangeText={setQuietStart}
+            placeholder="22:00"
+            placeholderTextColor="#CCC"
+            maxLength={5}
+          />
+          <Text style={styles.quietTilde}>~</Text>
+          <TextInput
+            style={styles.quietInput}
+            value={quietEnd}
+            onChangeText={setQuietEnd}
+            placeholder="08:00"
+            placeholderTextColor="#CCC"
+            maxLength={5}
+          />
+          <TouchableOpacity style={styles.quietSaveBtn} onPress={handleSaveQuietHours} disabled={quietSaving}>
+            <Text style={styles.quietSaveText}>{quietSaving ? '...' : '保存'}</Text>
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity onPress={handleClearQuietHours}>
+          <Text style={styles.quietClear}>清除免打扰设置</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* 账号类型 */}
       <View style={styles.accountCard}>
         <Text style={styles.accountLabel}>账号类型</Text>
@@ -316,6 +390,28 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   avatarCircleFramed: { borderWidth: 4 },
+  quietHint: { fontSize: 12, color: '#999', marginBottom: 10, lineHeight: 18 },
+  quietRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  quietInput: {
+    width: 76,
+    backgroundColor: '#F8F8F8',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: '#5A4A4A',
+    textAlign: 'center',
+  },
+  quietTilde: { fontSize: 14, color: '#BBB' },
+  quietSaveBtn: {
+    backgroundColor: '#FF9F43',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginLeft: 4,
+  },
+  quietSaveText: { fontSize: 13, color: '#FFF', fontWeight: '600' },
+  quietClear: { fontSize: 12, color: '#BBB', marginTop: 10 },
   avatarEmoji: { fontSize: 40 },
   nickname: { fontSize: 22, fontWeight: '700', color: '#5A4A4A' },
   email: { fontSize: 13, color: '#999', marginTop: 4 },

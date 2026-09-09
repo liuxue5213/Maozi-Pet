@@ -19,6 +19,30 @@ export type CareKind = keyof typeof CARE_KINDS;
 
 const EXPO_TOKEN_RE = /^Expo(nent)?PushToken\[[a-zA-Z0-9-_]{8,}\]$/;
 
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * 免打扰时段判定（纯函数，可单测）
+ * @param start "HH:MM"，null/非法 = 不启用
+ * @param end   "HH:MM"；start > end 表示跨零点窗口（如 22:00→08:00）
+ */
+export function isWithinQuietHours(now: Date, start?: string | null, end?: string | null): boolean {
+  if (!start || !end || !HHMM_RE.test(start) || !HHMM_RE.test(end)) return false;
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  const s = sh * 60 + sm;
+  const e = eh * 60 + em;
+  if (s === e) return false; // 起止相同视为未启用
+  if (s < e) return minutes >= s && minutes < e; // 同日窗口
+  return minutes >= s || minutes < e; // 跨零点窗口
+}
+
+/** 校验并规范化免打扰设置；不合法返回 null */
+export function parseQuietTime(v: unknown): string | null {
+  return typeof v === 'string' && HHMM_RE.test(v) ? v : null;
+}
+
 /** 注册/更新设备令牌；格式校验拒绝非 Expo 令牌 */
 export function registerPushToken(userId: string, token: string): boolean {
   if (!EXPO_TOKEN_RE.test(token)) return false;
@@ -36,16 +60,18 @@ interface PushTarget {
   kind: CareKind;
 }
 
-/** 找出需要照料提醒的宠物（用户已注册令牌、属性低于阈值、今日未推过） */
-function collectCarePushes(): PushTarget[] {
+/** 找出需要照料提醒的宠物（用户已注册令牌、属性低于阈值、今日未推过、不在免打扰时段） */
+function collectCarePushes(now: Date = new Date()): PushTarget[] {
   const today = todayStr();
   const targets: PushTarget[] = [];
 
   for (const [kind, cfg] of Object.entries(CARE_KINDS)) {
     const rows = db.prepare(`
-      SELECT pt.token, p.id AS petId, p.name AS petName
+      SELECT pt.token, p.id AS petId, p.name AS petName,
+             u.push_quiet_start AS quietStart, u.push_quiet_end AS quietEnd
       FROM pets p
       JOIN push_tokens pt ON pt.user_id = p.user_id
+      JOIN users u ON u.id = p.user_id
       WHERE p.is_retired = 0
         AND ${cfg.column} < ${cfg.threshold}
         AND NOT EXISTS (
@@ -55,6 +81,8 @@ function collectCarePushes(): PushTarget[] {
     `).all(kind, today) as any[];
 
     for (const r of rows) {
+      // 免打扰时段内的目标静默跳过（不占当日名额，出窗口后照常推送）
+      if (isWithinQuietHours(now, r.quietStart, r.quietEnd)) continue;
       targets.push({ token: r.token, petId: r.petId, petName: r.petName, kind: kind as CareKind });
     }
   }

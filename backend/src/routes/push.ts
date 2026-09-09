@@ -5,9 +5,37 @@
  */
 import { Router, Request, Response } from 'express';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
-import { registerPushToken, dispatchPetCarePushes } from '../utils/push';
+import db from '../db';
+import { registerPushToken, dispatchPetCarePushes, parseQuietTime } from '../utils/push';
 
 export const pushRouter = Router();
+
+// 免打扰时段：查看 / 设置（"HH:MM" 起止，传 null 清除；start > end = 跨零点窗口）
+pushRouter.get('/settings', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const row = db.prepare('SELECT push_quiet_start, push_quiet_end FROM users WHERE id = ?').get(userId) as any;
+  res.json({ quietStart: row?.push_quiet_start || null, quietEnd: row?.push_quiet_end || null });
+});
+
+pushRouter.post('/settings', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { quietStart, quietEnd } = req.body ?? {};
+
+  // 免打扰时段不合法/只传一头 → 视为关闭（两端都需为合法 HH:MM 才生效）
+  const start = parseQuietTime(quietStart);
+  const end = parseQuietTime(quietEnd);
+  const effectiveStart = start && end ? start : null;
+  const effectiveEnd = start && end ? end : null;
+
+  db.prepare('UPDATE users SET push_quiet_start = ?, push_quiet_end = ? WHERE id = ?')
+    .run(effectiveStart, effectiveEnd, userId);
+
+  res.json({
+    message: effectiveStart ? `🌙 免打扰时段已设为 ${effectiveStart} ~ ${effectiveEnd}` : '免打扰已关闭，帽子随时可以找你',
+    quietStart: effectiveStart,
+    quietEnd: effectiveEnd,
+  });
+});
 
 pushRouter.post('/register', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
