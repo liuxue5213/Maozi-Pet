@@ -172,7 +172,12 @@ export default function HabitsScreen() {
                 <View>
                   <Text style={styles.habitName}>{habit.name}</Text>
                   <Text style={styles.habitMeta}>
-                    {habit.streak > 0 ? `🔥 连续 ${habit.streak} 天` : '今天还没打卡'} · 累计 {habit.totalCheckins} 次
+                    {habit.streak > 0
+                      ? `🔥 连续 ${habit.streak} 天${habit.checkedToday ? '' : ' · 今天打卡就续上啦'}`
+                      : habit.totalCheckins > 0
+                        ? '🌱 断了也没关系，随时可以从今天重新开始'
+                        : '🌱 从第 1 天开始吧'}
+                    {' · '}累计 {habit.totalCheckins} 次
                   </Text>
                   {habit.nextMilestoneDays !== null && (
                     <Text style={styles.habitMilestone}>

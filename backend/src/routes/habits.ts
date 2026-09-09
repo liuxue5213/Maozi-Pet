@@ -160,7 +160,9 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
     throw err;
   }
 
-  let message = `✅ 「${habit.name}」打卡成功 🔥 连续 ${streak} 天`;
+  // 无压力文案：streak=1 是重爬第一天，用「重新启程」而非「连续 1 天」的生硬表述
+  const streakText = streak === 1 ? '🌱 重新启程第 1 天' : `🔥 连续 ${streak} 天`;
+  let message = `✅ 「${habit.name}」打卡成功 ${streakText}`;
   if (coinReward > 0) message += ` 🪙+${coinReward}`;
   if (petMoodApplied) message += ` ${petName} 心情+${CHECK_MOOD}`;
   else if (petSleeping) message += `（${petName} 睡得正香 😴 心情奖励明天继续）`;
