@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/utils/memory.test.ts src/utils/tasks.test.ts src/utils/rps.test.ts src/utils/recall.test.ts src/utils/achievements.test.ts src/utils/sleep.test.ts src/utils/guess.test.ts"
+    "test": "node --import tsx --test src/utils/memory.test.ts src/utils/tasks.test.ts src/utils/furniture.test.ts src/utils/rps.test.ts src/utils/recall.test.ts src/utils/achievements.test.ts src/utils/sleep.test.ts src/utils/guess.test.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",
