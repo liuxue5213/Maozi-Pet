@@ -264,6 +264,8 @@ export default function HomeScreen() {
   const [interactMessage, setInteractMessage] = useState('');
   const [tasks, setTasks] = useState<DailyTask[]>([]);
   const [rpsVisible, setRpsVisible] = useState(false);
+  const [retireVisible, setRetireVisible] = useState(false);
+  const [retireBusy, setRetireBusy] = useState(false);
   const eventAttempted = useRef(false); // 每次进入 app 只尝试拉取一次随机事件
 
   // 每日任务：拉取 + 领取（金币即时同步到全局用户状态）
@@ -294,6 +296,24 @@ export default function HomeScreen() {
   const handleLogout = async () => {
     await logout();
     router.replace('/login');
+  };
+
+  // 光荣退休：确认后调用后端，宠物入驻档案馆，回到孵化引导
+  const handleRetire = async () => {
+    if (!pet || retireBusy) return;
+    setRetireBusy(true);
+    try {
+      const result = await apiFetch<{ message: string }>(`/pet/${pet.id}/retire`, { method: 'POST' });
+      setRetireVisible(false);
+      setInteractMessage(result.message);
+      setTimeout(() => setInteractMessage(''), 4000);
+      await fetchPet();
+    } catch (err: any) {
+      setInteractMessage(err.message || '退休失败，请稍后再试');
+      setTimeout(() => setInteractMessage(''), 3000);
+    } finally {
+      setRetireBusy(false);
+    }
   };
 
   // 页面获得焦点时：刷新宠物 + 恢复用户信息 + 同步装扮/场景数据
@@ -488,7 +508,44 @@ export default function HomeScreen() {
         <StatBar label="😊 心情" value={pet.stats.mood} color="#FECA57" />
         <StatBar label="⚡ 体力" value={pet.stats.energy} color="#5F27CD" />
         <StatBar label="❤️ 健康" value={pet.stats.health} color="#FF6B6B" />
+        {/* 成年宠物：退休循环入口（退休≠死亡：入驻档案馆，记忆日记永久保存） */}
+        {pet.stage === 'adult' && (
+          <TouchableOpacity style={styles.retireEntry} onPress={() => setRetireVisible(true)}>
+            <Text style={styles.retireEntryText}>🎓 让{pet.name}光荣退休，入驻档案馆</Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      {/* 退休确认弹窗 */}
+      <Modal visible={retireVisible} transparent animationType="fade">
+        <View style={styles.retireOverlay}>
+          <View style={styles.retireDialog}>
+            <Text style={styles.retireTitle}>🎓 光荣退休</Text>
+            <Text style={styles.retireBody}>
+              {pet.name}将结束成长之旅，入驻宠物档案馆{'\n'}
+              · 它的记忆日记会永久保存{'\n'}
+              · 退休后可以孵化新的宠物蛋{'\n'}
+              · 此操作不可撤销
+            </Text>
+            <View style={styles.retireBtns}>
+              <TouchableOpacity
+                style={styles.retireCancelBtn}
+                disabled={retireBusy}
+                onPress={() => setRetireVisible(false)}
+              >
+                <Text style={styles.retireCancelText}>再陪陪它</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.retireConfirmBtn, retireBusy && styles.retireBtnDisabled]}
+                disabled={retireBusy}
+                onPress={handleRetire}
+              >
+                <Text style={styles.retireConfirmText}>{retireBusy ? '办理中...' : '光荣退休'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -662,6 +719,49 @@ const styles = StyleSheet.create({
     }),
   },
   achievementEntryText: { fontSize: 13, fontWeight: '600', color: '#B8860B' },
+
+  // 退休入口 + 确认弹窗
+  retireEntry: {
+    marginTop: 12,
+    backgroundColor: '#F5F0FF',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  retireEntryText: { fontSize: 12, fontWeight: '600', color: '#5F27CD' },
+  retireOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 32 },
+  retireDialog: {
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 20 },
+      android: { elevation: 12 },
+    }),
+  },
+  retireTitle: { fontSize: 18, fontWeight: '700', color: '#5A4A4A', textAlign: 'center', marginBottom: 12 },
+  retireBody: { fontSize: 13, color: '#777', lineHeight: 22, textAlign: 'center', marginBottom: 20 },
+  retireBtns: { flexDirection: 'row', gap: 12 },
+  retireCancelBtn: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: 22,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+  },
+  retireCancelText: { fontSize: 14, color: '#777', fontWeight: '600' },
+  retireConfirmBtn: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: 22,
+    backgroundColor: '#5F27CD',
+    alignItems: 'center',
+  },
+  retireConfirmText: { fontSize: 14, color: '#FFF', fontWeight: '600' },
+  retireBtnDisabled: { opacity: 0.6 },
 
   // 猜拳小游戏弹窗
   rpsContainer: { flex: 1, backgroundColor: '#FFF5F7', alignItems: 'center' },
