@@ -2,6 +2,12 @@
 
 > Run 日志（最新在上）
 
+## Run @2026-09-10 03:55（第二夜迭代 会话B：第 11 轮）
+- **头像框社交外显**：社交页广场是 frame 买家最想展示的场景，此前作者头像硬编码 🐱 且无框
+  · 后端 /social/posts 联 users.avatar_emoji（真实头像 emoji）+ pet_equips frame 槽（帖子宠物的头像框 itemId）
+  · 前端 PostCard：头像显示作者真实 emoji；帖子宠物带 frame → 头像 3px 彩色描边（FRAME_RING_COLORS 映射）
+  · 冒烟：发帖（装钻石框的宠物）→ 广场 feed 返回 avatarEmoji + frameItem=frame_diamond ✅
+
 ## Run @2026-09-10 03:45-03:55（第二夜迭代 会话B：第 10 轮 + 可视化验证）
 - **第 10 轮（03:44）AI 情绪外显**：P3 观察项落地——首页宠物表情按状态分档（心情低落😿 > 饥饿😾 > 脏了🙀 > 犯困😪）+ 互动引导提示语（"肚子咕咕叫了,喂点吃的吧"），对标 Finch 情绪可见性；此前仅 mood<30 一种表情
 - **浏览器可视化验证**（Web 构建 + IAB，此前所有轮次仅 typecheck/API 冒烟）：
