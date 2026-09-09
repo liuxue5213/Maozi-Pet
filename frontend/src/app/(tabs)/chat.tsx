@@ -10,6 +10,8 @@ import {
   TextInput,
   TouchableOpacity,
   FlatList,
+  Modal,
+  Alert,
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
@@ -17,9 +19,10 @@ import { useFocusEffect } from 'expo-router';
 import { usePetStore } from '../../store/petStore';
 
 export default function ChatScreen() {
-  const { pet, chatHistory, sendMessage, loadHistory } = usePetStore();
+  const { pet, chatHistory, sendMessage, loadHistory, memories, memoriesLoading, fetchMemories, forgetMemory } = usePetStore();
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [showMemories, setShowMemories] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   // 进入页面时从服务器恢复聊天记录（重启 app 不丢对话）
@@ -51,6 +54,29 @@ export default function ChatScreen() {
     }
   };
 
+  // 打开记忆面板时拉取最新记忆
+  const openMemories = () => {
+    if (!pet) return;
+    fetchMemories(pet.id);
+    setShowMemories(true);
+  };
+
+  // 遗忘一条记忆（二次确认）
+  const handleForget = (memoryId: number) => {
+    if (!pet) return;
+    Alert.alert('忘记这件事？', '忘记后它就再也不记得啦', [
+      { text: '再想想', style: 'cancel' },
+      {
+        text: '忘记',
+        style: 'destructive',
+        onPress: async () => {
+          const ok = await forgetMemory(pet.id, memoryId);
+          if (!ok) Alert.alert('提示', '操作失败，请重试');
+        },
+      },
+    ]);
+  };
+
   if (!pet) {
     return (
       <View style={styles.emptyContainer}>
@@ -66,6 +92,13 @@ export default function ChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={90}
     >
+      {/* 顶部记忆入口 */}
+      <View style={styles.headerBar}>
+        <TouchableOpacity style={styles.memoryBtn} onPress={openMemories}>
+          <Text style={styles.memoryBtnText}>🧠 它记得的事{memories.length > 0 ? `（${memories.length}）` : ''}</Text>
+        </TouchableOpacity>
+      </View>
+
       <FlatList
         ref={flatListRef}
         data={chatHistory}
@@ -111,7 +144,7 @@ export default function ChatScreen() {
           placeholder={`对${pet.name}说...`}
           placeholderTextColor="#BBB"
           multiline
-          maxLength={200}
+          maxLength={500}
           returnKeyType="send"
           onSubmitEditing={handleSend}
         />
@@ -123,12 +156,94 @@ export default function ChatScreen() {
           <Text style={styles.sendBtnText}>{isSending ? '...' : '发送'}</Text>
         </TouchableOpacity>
       </View>
+
+      {/* 记忆面板：查看/遗忘宠物记住的事 */}
+      <Modal visible={showMemories} animationType="slide" transparent onRequestClose={() => setShowMemories(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>🧠 它记得的事</Text>
+              <TouchableOpacity onPress={() => setShowMemories(false)}>
+                <Text style={styles.modalClose}>完成</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={memories}
+              keyExtractor={(item) => String(item.id)}
+              renderItem={({ item }) => (
+                <View style={styles.memoryRow}>
+                  <View style={styles.memoryContent}>
+                    <Text style={styles.memoryText}>{item.content}</Text>
+                    <Text style={styles.memoryTime}>{item.created_at.slice(5, 10)} 记下的</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => handleForget(item.id)}>
+                    <Text style={styles.forgetBtn}>🗑️</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              ListEmptyComponent={
+                <View style={styles.memoryEmpty}>
+                  <Text style={styles.memoryEmptyText}>
+                    {memoriesLoading ? '翻找记忆中...' : '还没有记忆~ 多聊聊，说「我叫...」「我喜欢...」，它会记在心里'}
+                  </Text>
+                </View>
+              }
+            />
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF5F7' },
+  headerBar: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 6,
+    backgroundColor: '#FFF5F7',
+  },
+  memoryBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFF',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  memoryBtnText: { fontSize: 13, color: '#8A6A6A' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    height: '55%',
+    paddingBottom: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F0F0',
+  },
+  modalTitle: { fontSize: 16, fontWeight: '600', color: '#5A4A4A' },
+  modalClose: { fontSize: 14, color: '#FF9F43', fontWeight: '600' },
+  memoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#FAF5F5',
+  },
+  memoryContent: { flex: 1 },
+  memoryText: { fontSize: 14, color: '#5A4A4A', lineHeight: 20 },
+  memoryTime: { fontSize: 11, color: '#C0A8A8', marginTop: 2 },
+  forgetBtn: { fontSize: 18, paddingHorizontal: 8 },
+  memoryEmpty: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 30 },
+  memoryEmptyText: { fontSize: 13, color: '#BBB', textAlign: 'center', lineHeight: 20 },
   chatList: { padding: 16, flexGrow: 1 },
   messageRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end' },
   userRow: { justifyContent: 'flex-end' },

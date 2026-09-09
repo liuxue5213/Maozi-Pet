@@ -42,6 +42,13 @@ export interface ChatMessage {
   isLocal?: boolean;
 }
 
+/** 宠物记忆（GET /ai/memories/:petId 返回结构） */
+export interface PetMemory {
+  id: number;
+  content: string;
+  created_at: string;
+}
+
 export interface UserInfo {
   id: string;
   type: 'guest' | 'registered';
@@ -82,6 +89,10 @@ interface PetState {
   chatHistory: ChatMessage[];
   todayEvent: string | null;
 
+  // 记忆
+  memories: PetMemory[];
+  memoriesLoading: boolean;
+
   // --- Auth Actions ---
   setAuth: (user: UserInfo) => void;
   updateCoins: (coins: number) => void;
@@ -95,6 +106,8 @@ interface PetState {
   sendMessage: (text: string) => Promise<void>;
   loadHistory: (petId: string) => Promise<void>;
   fetchTodayEvent: () => Promise<void>;
+  fetchMemories: (petId: string) => Promise<void>;
+  forgetMemory: (petId: string, memoryId: number) => Promise<boolean>;
   retirePet: () => Promise<string>;
   clearEvent: () => void;
   clearError: () => void;
@@ -109,6 +122,8 @@ export const usePetStore = create<PetState>((set, get) => ({
   error: null,
   chatHistory: [],
   todayEvent: null,
+  memories: [],
+  memoriesLoading: false,
 
   // ============================================================
   // 用户认证
@@ -267,19 +282,51 @@ export const usePetStore = create<PetState>((set, get) => ({
   },
 
   // 触发随机日常事件（进入首页时调用一次；后端 AI 不可用时有本地兜底）
+  // 事件奖励已由后端真实入账，这里同步金币到全局状态
   fetchTodayEvent: async () => {
     const { pet, todayEvent } = get();
     if (!pet || todayEvent) return;
     try {
-      const result = await apiFetch<{ event: string; reward: string }>('/ai/event', {
+      const result = await apiFetch<{ event: string; reward: string; coinReward?: number; totalCoins?: number }>('/ai/event', {
         method: 'POST',
         body: JSON.stringify({ personality: pet.personality, petState: pet.stats }),
       });
       if (result?.event) {
-        set({ todayEvent: `${result.event}（${result.reward || '有小惊喜'}）` });
+        if (typeof result.totalCoins === 'number') {
+          get().updateCoins(result.totalCoins);
+        }
+        const rewardText =
+          typeof result.coinReward === 'number' && result.coinReward > 0
+            ? `🪙+${result.coinReward}`
+            : result.reward || '有小惊喜';
+        set({ todayEvent: `${result.event}（${rewardText}）` });
       }
     } catch {
       // 静默失败，事件是锦上添花的功能
+    }
+  },
+
+  // 拉取宠物记得的事（聊天页「记忆」入口）
+  fetchMemories: async (petId: string) => {
+    set({ memoriesLoading: true });
+    try {
+      const result = await apiFetch<{ memories: PetMemory[] }>(`/ai/memories/${petId}`);
+      set({ memories: result.memories || [] });
+    } catch {
+      // 静默失败：记忆面板展示空态即可
+    } finally {
+      set({ memoriesLoading: false });
+    }
+  },
+
+  // 遗忘一条记忆（乐观移除，失败时返回 false 由调用方提示）
+  forgetMemory: async (petId: string, memoryId: number) => {
+    try {
+      await apiFetch(`/ai/memories/${petId}/${memoryId}`, { method: 'DELETE' });
+      set(state => ({ memories: state.memories.filter(m => m.id !== memoryId) }));
+      return true;
+    } catch {
+      return false;
     }
   },
 

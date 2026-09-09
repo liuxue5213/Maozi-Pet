@@ -4,9 +4,10 @@
  * 新增：鉴权、消息长度限制、请求超时、聊天记录持久化
  */
 import { Router, Request, Response } from 'express';
-import db from '../db';
+import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 import { todayStr } from '../utils/today';
+import { extractFacts } from '../utils/memory';
 
 export const aiRouter = Router();
 
@@ -18,6 +19,7 @@ const MAX_MESSAGE_LENGTH = 500;        // 单条消息最大字符
 const MAX_HISTORY_LENGTH = 20;         // 最多携带的历史消息数
 const AI_REQUEST_TIMEOUT_MS = 30000;   // AI 请求 30 秒超时
 const MAX_DAILY_MESSAGES = 100;        // 每日消息上限（防刷）
+const MAX_COINS_PER_DAY = 200;         // 每日金币产出上限（与互动共享，见 routes/pet.ts）
 
 // ============================================================
 // 宠物性格模板
@@ -246,12 +248,12 @@ aiRouter.post('/event', authMiddleware, async (req: Request, res: Response) => {
       { role: 'user', content: prompt },
     ]).catch(() => getLocalEvent(personality));
 
-    try {
-      const parsed = JSON.parse(result);
-      res.json(parsed);
-    } catch {
-      res.json({ event: result, reward: '金币 x5', animation: 'happy' });
-    }
+    const eventPayload = normalizeEventPayload(result);
+
+    // 奖励真实入账（计入每日 200 金币防刷预算，与宠物互动共享上限，见 routes/pet.ts）
+    const { coinReward, totalCoins } = grantEventCoins(userId, parseEventReward(eventPayload.reward));
+
+    res.json({ ...eventPayload, coinReward, totalCoins });
   } catch (error: any) {
     console.error('事件生成错误:', error.message);
     res.status(500).json({ error: '事件生成失败' });
@@ -370,9 +372,63 @@ async function callBailianAPIWithTimeout(
   }
 }
 
+// ============================================================
+// 随机事件奖励（真实入账）
+// ============================================================
+
+const MAX_EVENT_REWARD = 10;    // 单次事件奖励金币上限
+
+/** 从 AI 返回的奖励描述中解析金币数；无数字时取 3-8 随机值，单次上限 10 */
+export function parseEventReward(reward: unknown): number {
+  const m = typeof reward === 'string' ? /(\d+)/.exec(reward) : null;
+  const n = m ? parseInt(m[1], 10) : 3 + Math.floor(Math.random() * 6);
+  return Math.min(Math.max(1, n), MAX_EVENT_REWARD);
+}
+
+/** 校验 AI 返回的事件 JSON，字段缺失/类型异常时降级为兜底值 */
+function normalizeEventPayload(raw: string): { event: string; reward: string; animation: string } {
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.event !== 'string' || !parsed.event) throw new Error('bad payload');
+    return {
+      event: parsed.event,
+      reward: typeof parsed.reward === 'string' ? parsed.reward : '金币 x5',
+      animation: typeof parsed.animation === 'string' ? parsed.animation : 'happy',
+    };
+  } catch {
+    return { event: raw, reward: '金币 x5', animation: 'happy' };
+  }
+}
+
+/** 事件金币入账：与宠物互动共享每日 200 金币预算（daily_interactions），事务防并发 */
+function grantEventCoins(userId: string, reward: number): { coinReward: number; totalCoins: number } {
+  const today = todayStr();
+  let coinReward = 0;
+
+  transaction((tx) => {
+    let daily = tx.prepare('SELECT * FROM daily_interactions WHERE user_id = ? AND interaction_date = ?')
+      .get(userId, today) as any;
+    if (!daily) {
+      tx.prepare('INSERT INTO daily_interactions (user_id, interaction_date, count, coins_earned) VALUES (?, ?, 0, 0)')
+        .run(userId, today);
+      daily = tx.prepare('SELECT * FROM daily_interactions WHERE user_id = ? AND interaction_date = ?')
+        .get(userId, today) as any;
+    }
+
+    const remaining = MAX_COINS_PER_DAY - (daily?.coins_earned || 0);
+    coinReward = Math.max(0, Math.min(reward, remaining));
+    if (coinReward > 0) {
+      tx.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(coinReward, userId);
+      tx.prepare('UPDATE daily_interactions SET coins_earned = coins_earned + ? WHERE id = ?').run(coinReward, daily.id);
+    }
+  });
+
+  const totalCoins = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any)?.coins || 0;
+  return { coinReward, totalCoins };
+}
+
 // 本地兜底随机事件（AI API 不可用时使用）
-function getLocalEvent(personality: string): string {
-  const events: Record<string, string[]> = {
+function getLocalEvent(personality: string): string {  const events: Record<string, string[]> = {
     cute: [
       '帽子在角落里发现了一个毛线球，拍了一下午',
       '帽子晒着太阳打盹，尾巴一晃一晃的',
@@ -441,32 +497,10 @@ function cleanupOldMessages(userId: string, petId: string): void {
 
 const MAX_MEMORIES_PER_PET = 50;
 
-/** 正则提取用户主动告知的事实；返回规范化的记忆文本列表 */
+/** 提取用户消息中的事实并入库（提取规则见 utils/memory.ts，可单测） */
 function extractMemories(userId: string, petId: string, text: string): void {
   try {
-    const t = text.trim().slice(0, MAX_MESSAGE_LENGTH);
-    if (!t) return;
-    const facts: string[] = [];
-
-    const name = /(?:我叫|我的名字(?:是|叫)|叫我)\s*([\u4e00-\u9fa5a-zA-Z0-9·]{1,12})/.exec(t);
-    if (name) facts.push(`主人叫${name[1]}`);
-
-    const like = /我喜欢\s*([\u4e00-\u9fa5a-zA-Z0-9]{1,12})/.exec(t);
-    if (like) facts.push(`主人喜欢${like[1]}`);
-
-    const hate = /我(?:讨厌|不喜欢|不爱)\s*([\u4e00-\u9fa5a-zA-Z0-9]{1,12})/.exec(t);
-    if (hate) facts.push(`主人讨厌${hate[1]}`);
-
-    const birthday = /我(?:的)?生日(?:是|在)?\s*([\d年月日]{4,12})/.exec(t);
-    if (birthday) facts.push(`主人的生日是${birthday[1]}`);
-
-    const todo = /记住[:：,，。\s]+(.{2,40})/.exec(t);
-    if (todo) facts.push(`主人的叮嘱：${todo[1].trim()}`);
-
-    const job = /我在(学习|研究|做|干)\s*([\u4e00-\u9fa5a-zA-Z0-9]{1,10})/.exec(t);
-    if (job) facts.push(`主人在${job[1]}${job[2]}`);
-
-    for (const fact of facts) addMemory(userId, petId, fact);
+    for (const fact of extractFacts(text)) addMemory(userId, petId, fact);
   } catch {
     // 记忆提取失败不影响对话主流程
   }
