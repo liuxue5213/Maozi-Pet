@@ -45,3 +45,49 @@ test('parseQuietTime：合法 HH:MM 原样返回，其余 null', () => {
   assert.strictEqual(parseQuietTime(undefined), null);
   assert.strictEqual(parseQuietTime(null), null);
 });
+
+// === Round 19：习惯打卡提醒 ===
+import { isHabitRemindWindow, pickHabitReminder, habitReminderCopy, HABIT_REMIND_START_HOUR, HABIT_REMIND_END_HOUR } from './push';
+
+test('习惯提醒窗口：18:00 含、22:00 不含', () => {
+  assert.strictEqual(isHabitRemindWindow(at(18, 0)), true);
+  assert.strictEqual(isHabitRemindWindow(at(17, 59)), false);
+  assert.strictEqual(isHabitRemindWindow(at(21, 59)), true);
+  assert.strictEqual(isHabitRemindWindow(at(22, 0)), false);
+  assert.strictEqual(isHabitRemindWindow(at(8, 0)), false);
+  assert.strictEqual(HABIT_REMIND_START_HOUR, 18);
+  assert.strictEqual(HABIT_REMIND_END_HOUR, 22);
+});
+
+test('pickHabitReminder：已打卡/零 streak 的习惯不提醒', () => {
+  assert.strictEqual(pickHabitReminder([
+    { id: 'a', name: '喝水', streak: 3, checkedToday: true },
+    { id: 'b', name: '新习惯', streak: 0, checkedToday: false },
+  ]), null);
+});
+
+test('pickHabitReminder：多个候选挑 streak 最高的', () => {
+  const pick = pickHabitReminder([
+    { id: 'a', name: '喝水', streak: 3, checkedToday: false },
+    { id: 'b', name: '跑步', streak: 7, checkedToday: false },
+    { id: 'c', name: '读书', streak: 1, checkedToday: false },
+  ]);
+  assert.strictEqual(pick?.id, 'b');
+});
+
+test('pickHabitReminder：streak 并列取第一个（稳定）', () => {
+  const pick = pickHabitReminder([
+    { id: 'x', name: 'A', streak: 5, checkedToday: false },
+    { id: 'y', name: 'B', streak: 5, checkedToday: false },
+  ]);
+  assert.strictEqual(pick?.id, 'x');
+});
+
+test('habitReminderCopy：streak≥2 宠物口吻带天数；streak=1 正向开新档；无宠物兜底', () => {
+  const a = habitReminderCopy('喝水', 5, '帽子');
+  assert.ok(a.title.includes('别断') && a.body.includes('帽子') && a.body.includes('5 天'));
+  const b = habitReminderCopy('跑步', 1, '帽子');
+  assert.ok(b.title.includes('好头') && !b.body.includes('连续'));
+  const c = habitReminderCopy('读书', 9, null);
+  assert.ok(!c.body.includes('undefined') && c.body.includes('9 天'));
+});

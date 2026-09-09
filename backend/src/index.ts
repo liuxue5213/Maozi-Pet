@@ -17,7 +17,7 @@ import { tasksRouter } from './routes/tasks';
 import { achievementsRouter } from './routes/achievements';
 import { habitsRouter } from './routes/habits';
 import { pushRouter } from './routes/push';
-import { dispatchPetCarePushes } from './utils/push';
+import { dispatchPetCarePushes, dispatchHabitReminderPushes } from './utils/push';
 import { startTokenCleanupLoop } from './utils/tokens';
 
 // 加载环境变量
@@ -117,11 +117,15 @@ const server = app.listen(PORT, () => {
 });
 
 // 推送召回：每 30 分钟扫描一次需要照料的宠物（PUSH_ENABLED=false 可关闭，测试用）
+// 含两类：宠物属性照料（hungry/sad）+ 习惯打卡提醒（habit，18-22 点窗口、1 条/人/日）
 if (process.env.PUSH_ENABLED !== 'false') {
   setInterval(() => {
     dispatchPetCarePushes()
       .then(s => { if (s.attempted > 0) console.log(`📨 推送扫描: 尝试 ${s.attempted}, 成功 ${s.sent}, 清理失效令牌 ${s.invalidRemoved}`); })
       .catch(err => console.error('推送扫描失败:', err.message));
+    dispatchHabitReminderPushes()
+      .then(s => { if (s.attempted > 0) console.log(`🌱 习惯提醒: 尝试 ${s.attempted}, 成功 ${s.sent}, 清理失效令牌 ${s.invalidRemoved}`); })
+      .catch(err => console.error('习惯提醒失败:', err.message));
   }, 30 * 60 * 1000);
 }
 

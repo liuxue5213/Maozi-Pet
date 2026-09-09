@@ -1,5 +1,16 @@
 # 竞品分析（追加式日志）
 
+## 2026-09-10 08:00 扫描（日间周期 08 点轮：推送/提醒赛道）
+
+| 竞品/共识 | 核心做法 | 对本项目的启示 |
+|------|---------|--------------|
+| **行为触发推送**（AppBot 2026 / OneSignal） | 按用户行为状态触发，而非固定时刻；非紧急消息延后到用户可能的空闲档 | R19 采用：18-22 点碎片档 + 「今日未打才提醒」，不做无差别定时轰炸 |
+| **Duolingo streak 机制**（trophy.so 10 例拆解 / 官方文档） | streak freeze 提前购买/成就兑换、streak repair 补救、Streak Society（100 天俱乐部）身份荣耀 | 🔴 「streak 冻结券」是新候选功能：宽宥机制保护付费/高价值用户的长期积累，与「无压力」定位兼容（防断签焦虑而非制造） |
+| **AI 预测发送时刻**（Chela / Reclaim / yougot） | 机器学习按个人历史选最优推送时刻 | 我们无用户行为数据积累，先用启发式窗口；等推送 open 数据攒起来再做个性化时刻 |
+| **习惯 App 90 天实测**（habi.app） | 多数习惯应用第 2 周被弃 | 提醒+streak 保护正是第 2 周流失的对症药；我们的宠物情感绑定是差异化护城河 |
+
+来源：[AppBot-2026 推送最佳实践](https://appbot.co/blog/app-push-notifications-2026-best-practices/)、[OneSignal-推送 8 条军规](https://onesignal.com/blog/onesignal-guide-push-notification-best-practices-2026/)、[trophy.so-streak 玩法 10 例](https://trophy.so/blog/streaks-feature-gamification-examples)、[Duolingo-streak 官方说明](https://www.duolingo.com/help/what-is-a-streak)、[Chela-AI 习惯提醒](https://chela.io/blog/ai-reminder-app-habits.html)、[habi.app-6 款实测](https://habi.app/insights/best-habit-tracker-apps/)
+
 ## 2026-09-10 06:00 收官轮扫描（第二夜终轮）
 
 **习惯打卡赛道垂直竞品 + 2026 行业趋势**：

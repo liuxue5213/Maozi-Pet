@@ -2,6 +2,16 @@
 
 > Run 日志（最新在上）
 
+## Run @2026-09-10 08:00-08:35（日间周期 08 点轮：R19 习惯打卡提醒推送）
+- **竞品扫描**（已录入 competitor-analysis.md）：2026 推送共识 = 行为触发>固定时刻（AppBot/OneSignal）；Duolingo streak freeze/repair = 宽容型 streak 机制标杆（trophy.so 10 例拆解）；AI 预测发送时刻（Chela/Reclaim）在无用户行为数据前不可做，先用轻量启发式；habi.app 90 天实测「多数习惯 App 第 2 周被弃」→ 智能提醒是留存命门
+- **完成 R19：习惯打卡提醒（push.ts 习惯维度扩展 + index.ts 挂载）**
+  · 触发策略（轻量自适应）：本地 **18:00-22:00 窗口**（一天将尽的碎片档，避开清晨/工作时段）+ 只提醒 **streak≥1 且今日未打** 的习惯 + **每用户每日最多 1 条**（streak 最高者优先=守护最值钱的积累）
+  · 纯函数三件套可单测：`isHabitRemindWindow` / `pickHabitReminder`（已打卡与零 streak 不提醒） / `habitReminderCopy`（宠物口吻、正向框架不责备：≥2 天「别断了呀+数着呢」、=1 天「开了个好头」、无宠物兜底）
+  · 复用既有防骚扰/失败语义：push_sent（habit_id 入 pet_id 槽、kind='habit'）INSERT OR IGNORE 抢名额；Expo 发送失败释放名额；DeviceNotRegistered 清令牌；免打扰时段全程生效；dispatch 带 `now` 注入参数供测试
+- **测试**：+5 单测（窗口边界/候选过滤/最高 streak/并列稳定/文案三态）→ **102 全绿**；typecheck ✅
+- **冒烟（直连 dev DB + 伪造窗口时刻，真调 Expo API）**：08:00 窗口外 attempted=0 ✅；19:00 attempted=1 + push_sent 落库 + 假令牌被 Expo 判 DeviceNotRegistered 自动清理 ✅；同日二次 attempted=0 ✅；免打扰 17:00-23:00 覆盖窗口 attempted=0 ✅。排障：冒烟脚本两坑——`toISOString()` 是 UTC 日期（本地 07:55 时 UTC 已是昨天，回填错位 streak=0）须用本地日期拼接；占位 ID 复用撞 UNIQUE 改随机 ID
+- 遗留记录：Duolingo 式「streak 冻结券」（可购买/成就兑换的保护道具）列为候选 R23
+
 ## Run @2026-09-10 07:00-07:40（第三夜/日间周期 07 点轮：R18 streak 里程碑 → 宠物成长绑定）
 - **起点回归**：83 单测全绿 + 双端 typecheck + 远端同步（本地 main == origin/main）
 - **⛔ APK 交付阻塞确认（用户侧动作）**：打包路径已存在且零密钥（`.github/workflows/build-apk-gradle.yml`，workflow_dispatch 手动触发 + v* 标签，GitHub Runner 上 prebuild + assembleDebug）；但本机 `gh` CLI 未认证、`eas` 未登录、本地无 Android SDK——**无法从本机触发/取产物**。用户解锁方式（二选一）：① 本机 `gh auth login` 后 `gh workflow run build-apk-gradle.yml -f api_base_url='http://<服务器IP>:60235/api'`，产物在 Actions Artifacts（maozi-pet-debug-apk，留 30 天）；② 网页 GitHub Actions 手动 Run workflow 填入 api_base_url。另 `frontend/eas.json` preview/production 的 EXPO_PUBLIC_API_BASE_URL 仍是占位符「替换为你的服务器IP」，真机包必须填真实地址
