@@ -93,7 +93,16 @@ const EQUIP_POSITIONS: Record<string, { top?: number; bottom?: number; left?: nu
   effect: { top: 28, left: 14 },
 };
 
-function PetAvatar({ stage, mood, equips, isSleeping }: { stage: string; mood: number; equips: EquippedItem[]; isSleeping: boolean }) {
+// 情绪外显：按状态优先级决定宠物表情（睡觉 > 心情 > 饥饿 > 清洁 > 体力）
+function moodState(stats: { hunger: number; cleanliness: number; mood: number; energy: number }): { emoji: string; hint: string } | null {
+  if (stats.mood < 30) return { emoji: '😿', hint: '它心情低落，陪它玩玩吧' };
+  if (stats.hunger < 30) return { emoji: '😾', hint: '它的肚子咕咕叫了，喂点吃的吧' };
+  if (stats.cleanliness < 30) return { emoji: '🙀', hint: '它身上脏脏的，洗个澡吧' };
+  if (stats.energy < 25) return { emoji: '😪', hint: '它困了，哄它睡一觉吧' };
+  return null;
+}
+
+function PetAvatar({ stage, stats, equips, isSleeping }: { stage: string; stats: { hunger: number; cleanliness: number; mood: number; energy: number }; equips: EquippedItem[]; isSleeping: boolean }) {
   const scaleAnim = React.useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
@@ -105,12 +114,14 @@ function PetAvatar({ stage, mood, equips, isSleeping }: { stage: string; mood: n
     ).start();
   }, []);
 
+  // 情绪外显：低状态表情 + 互动引导语（蛋/睡觉除外）
+  const state = stage !== 'egg' && !isSleeping ? moodState(stats) : null;
+
   const getPetEmoji = () => {
     if (stage === 'egg') return '🥚';
     if (isSleeping) return '😴';
-    if (mood < 30) return '😿';
+    if (state) return state.emoji;
     if (stage === 'adult') return '😺';
-    if (stage === 'teen') return '🐱';
     return '🐱';
   };
 
@@ -140,6 +151,7 @@ function PetAvatar({ stage, mood, equips, isSleeping }: { stage: string; mood: n
       ))}
       {stage === 'egg' && <Text style={styles.stageHint}>点击孵化 ✨</Text>}
       {isSleeping && stage !== 'egg' && <Text style={styles.stageHint}>Zzz… 睡得正香</Text>}
+      {state && <Text style={styles.stageHint}>{state.hint}</Text>}
     </Animated.View>
   );
 }
@@ -620,7 +632,7 @@ export default function HomeScreen() {
       )}
 
       {/* 宠物展示区 */}
-      <PetAvatar stage={pet.stage} mood={pet.stats.mood} equips={equips} isSleeping={isSleeping} />
+      <PetAvatar stage={pet.stage} stats={pet.stats} equips={equips} isSleeping={isSleeping} />
 
       {/* 互动反馈消息 */}
       {interactMessage ? (
