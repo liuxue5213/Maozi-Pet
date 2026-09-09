@@ -64,13 +64,16 @@ socialRouter.get('/posts', authMiddleware, (req: Request, res: Response) => {
   const offset = (page - 1) * pageSize;
 
   // 获取帖子 + 作者信息 + 宠物信息（过滤掉关闭广场展示的用户）
+  // 头像框是社交展示型装扮：联作者头像 emoji 与帖子宠物的 frame 装备，让"买了看得见"
   const posts = db.prepare(`
     SELECT p.*,
-      u.nickname as author_nickname, u.type as author_type,
-      pt.name as pet_name, pt.stage as pet_stage, pt.personality as pet_personality
+      u.nickname as author_nickname, u.type as author_type, u.avatar_emoji as author_avatar,
+      pt.name as pet_name, pt.stage as pet_stage, pt.personality as pet_personality,
+      pe.item_id as pet_frame_item
     FROM posts p
     LEFT JOIN users u ON p.user_id = u.id
     LEFT JOIN pets pt ON p.pet_id = pt.id
+    LEFT JOIN pet_equips pe ON pe.pet_id = pt.id AND pe.slot = 'frame'
     WHERE COALESCE(u.privacy_show_on_square, 1) = 1
     ORDER BY p.created_at DESC
     LIMIT ? OFFSET ?
@@ -96,12 +99,14 @@ socialRouter.get('/posts', authMiddleware, (req: Request, res: Response) => {
       id: post.user_id,
       nickname: post.author_nickname,
       type: post.author_type,
+      avatarEmoji: (post as any).author_avatar || '🐱',
     },
     pet: post.pet_id ? {
       id: post.pet_id,
       name: post.pet_name,
       stage: post.pet_stage,
       personality: post.pet_personality,
+      frameItem: (post as any).pet_frame_item || null,
     } : null,
     isLiked: likedSet.has(post.id),
   }));

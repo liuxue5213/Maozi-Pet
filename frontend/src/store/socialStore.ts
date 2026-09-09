@@ -17,8 +17,8 @@ export interface Post {
   likesCount: number;
   commentsCount: number;
   createdAt: string;
-  author: { id: string; nickname: string; type: string };
-  pet?: { id: string; name: string; stage: string; personality: string } | null;
+  author: { id: string; nickname: string; type: string; avatarEmoji?: string };
+  pet?: { id: string; name: string; stage: string; personality: string; frameItem?: string | null } | null;
   isLiked: boolean;
 }
 

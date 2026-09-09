@@ -18,6 +18,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSocialStore, Post } from '../../../store/socialStore';
 import { usePetStore } from '../../../store/petStore';
+import { FRAME_RING_COLORS } from '../../../config/appearance';
 
 // ============================================================
 // 子组件
@@ -25,13 +26,15 @@ import { usePetStore } from '../../../store/petStore';
 
 function PostCard({ post, onLike, onComment }: { post: Post; onLike: () => void; onComment: () => void }) {
   const timeAgo = getTimeAgo(post.createdAt);
+  // 作者头像：真实头像 emoji；作者宠物的头像框装备 → 彩色描边
+  const frameRing = post.pet?.frameItem ? FRAME_RING_COLORS[post.pet.frameItem] : null;
 
   return (
     <View style={styles.postCard}>
       {/* 作者信息 */}
       <View style={styles.postHeader}>
-        <View style={styles.avatarCircle}>
-          <Text style={styles.avatarEmoji}>🐱</Text>
+        <View style={[styles.avatarCircle, frameRing ? styles.avatarCircleFramed : null, frameRing ? { borderColor: frameRing } : null]}>
+          <Text style={styles.avatarEmoji}>{post.author.avatarEmoji || '🐱'}</Text>
         </View>
         <View style={styles.postHeaderInfo}>
           <Text style={styles.authorName}>{post.author.nickname}</Text>
@@ -354,6 +357,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  avatarCircleFramed: { borderWidth: 3 },
   avatarEmoji: { fontSize: 18 },
   postHeaderInfo: { flex: 1, marginLeft: 10 },
   authorName: { fontSize: 14, fontWeight: '600', color: '#5A4A4A' },
