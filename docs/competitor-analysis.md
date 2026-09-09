@@ -1,5 +1,21 @@
 # 竞品分析（追加式日志）
 
+## 2026-09-10 06:00 收官轮扫描（第二夜终轮）
+
+**习惯打卡赛道垂直竞品 + 2026 行业趋势**：
+
+| 竞品/趋势 | 核心做法 | 对本项目的启示 |
+|------|---------|--------------|
+| **Habit-chi**（Google Play） | 20+ 只动画宠物**随打卡进度真实进化**，streak 驱动宠物演变 | 🔴 我们的 streak 只是数字外显——「连续 3/7/21 天 → 宠物真实成长（经验/专属颜值/徽章）」是习惯系统的下一块拼图 |
+| **Pawbit**（App Store） | 完成目标养虚拟宠物 + Streak 特性 | 同上，验证「streak→宠物进化」是品类标配 |
+| **AI 特性渗透 58%**（habit-streak 2026 报告） | 新上线习惯应用过半带 AI：预测性习惯建议 + 按用户行为自适应的动态提醒 | 可复用既有 push 基建：按打卡历史生成个性化提醒文案（「小猫等你喝水等了 3 天」） |
+| **「无 streak 压力」设计思潮**（habi.app 测评） | 反焦虑：断签不清零/不惩罚，宠物「想念而非责备」 | 我们的断签仅重置计数（streak=1 可重来）已相对温和；需走查确认断签文案无惩罚语气 |
+| **Pengu 崛起要素**（Liftoff 拆解） | streak + 进度系统 + 社交三件套 | 习惯数据可入社交外显（帖子/串门展示好友 streak），与既有 frame 外显同构 |
+
+**下一夜立项结论**：① 习惯 streak 里程碑→宠物成长绑定（经验/限定颜值/徽章三选或并行）；② AI 个性化打卡提醒（复用 push 基建 + 习惯历史）；③ APK 构建交付为第一优先——两夜 17 轮功能全部待下个构建才能真机生效，构建/真机验证是最大交付风险。
+
+来源：[Aidorable-虚拟宠物自我关怀指南](https://www.aidorable.ai/blog/virtual-pet-self-care-app)、[Habit-chi](https://play.google.com/store/apps/details?id=com.nondev777.habitchi&hl=en)、[Pawbit](https://apps.apple.com/no/app/pawbit-habit-tracker/id6753361788)、[2026 习惯追踪行业报告](https://habit-streak.com/en/blog/habit-tracking/state-of-habit-tracking-2026)、[Liftoff-Learna 与 Pengu 增长拆解](https://liftoff.ai/blog/apps-and-trends-to-watch-engagement-strategies-fueling-learna-and-pengus-rise/)、[habi.app-无压力设计测评](https://habi.app/insights/best-habit-tracker-apps/)
+
 ## 2026-09-10 第 15 轮扫描（05:05，会话D）
 
 **2026 年 8-9 月新竞品情报**：
