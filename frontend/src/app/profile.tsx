@@ -15,6 +15,9 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { apiFetch, clearToken } from '../config/env';
+import { usePetStore } from '../store/petStore';
+import { useInventoryStore } from '../store/inventoryStore';
+import { FRAME_RING_COLORS, DEFAULT_FRAME_RING, equippedItemId } from '../config/appearance';
 
 interface UserProfile {
   id: string;
@@ -41,6 +44,11 @@ export default function ProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchProfile();
+      // 头像框装扮：进页面时拉一次当前宠物的装备
+      const currentPet = usePetStore.getState().pet;
+      if (currentPet) {
+        useInventoryStore.getState().fetchEquips(currentPet.id);
+      }
     }, [])
   );
 
@@ -107,6 +115,11 @@ export default function ProfileScreen() {
 
   const avatars = ['🐱', '😺', '😸', '😻', '🙀', '😽', '🐈', '🐈‍⬛', '🦁', '🐯', '🐆', '🦊'];
 
+  // 头像框装备 → 头像描边换色
+  const equips = useInventoryStore(state => state.equips);
+  const frameItemId = equippedItemId(equips, 'frame');
+  const frameRing = (frameItemId && FRAME_RING_COLORS[frameItemId]) || DEFAULT_FRAME_RING;
+
   return (
     <ScrollView style={styles.container}>
       {/* 顶部工具栏 */}
@@ -120,7 +133,7 @@ export default function ProfileScreen() {
 
       {/* 头像 + 基本信息 */}
       <View style={styles.header}>
-        <View style={styles.avatarCircle}>
+        <View style={[styles.avatarCircle, frameItemId ? styles.avatarCircleFramed : null, frameItemId ? { borderColor: frameRing } : null]}>
           <Text style={styles.avatarEmoji}>{profile.avatarEmoji}</Text>
         </View>
 
@@ -302,6 +315,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  avatarCircleFramed: { borderWidth: 4 },
   avatarEmoji: { fontSize: 40 },
   nickname: { fontSize: 22, fontWeight: '700', color: '#5A4A4A' },
   email: { fontSize: 13, color: '#999', marginTop: 4 },

@@ -18,14 +18,23 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { usePetStore } from '../../store/petStore';
+import { useInventoryStore } from '../../store/inventoryStore';
 import { apiFetch } from '../../config/env';
+import { BUBBLE_STYLES, SKIN_RING_COLORS, equippedItemId } from '../../config/appearance';
 
 export default function ChatScreen() {
   const { pet, chatHistory, sendMessage, loadHistory, memories, memoriesLoading, fetchMemories, forgetMemory } = usePetStore();
+  const equips = useInventoryStore(state => state.equips);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [showMemories, setShowMemories] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+
+  // 装扮外显：气泡样式（默认宠物消息白底）+ 皮肤描边
+  const bubbleItemId = equippedItemId(equips, 'bubble');
+  const bubbleStyle = (bubbleItemId && BUBBLE_STYLES[bubbleItemId]) || null;
+  const skinItemId = equippedItemId(equips, 'skin');
+  const skinRing = (skinItemId && SKIN_RING_COLORS[skinItemId]) || 'transparent';
 
   // 进入页面时从服务器恢复聊天记录（重启 app 不丢对话）
   useFocusEffect(
@@ -141,13 +150,18 @@ export default function ChatScreen() {
             item.role === 'user' ? styles.userRow : styles.petRow,
           ]}>
             {item.role === 'assistant' && (
-              <View style={styles.petAvatar}>
+              <View style={[styles.petAvatar, skinItemId ? { borderWidth: 3, borderColor: skinRing } : null]}>
                 <Text style={styles.petAvatarText}>🐱</Text>
               </View>
             )}
             <View style={[
               styles.bubble,
               item.role === 'user' ? styles.userBubble : styles.petBubble,
+              item.role === 'assistant' && bubbleStyle ? {
+                backgroundColor: bubbleStyle.backgroundColor,
+                borderWidth: 2,
+                borderColor: bubbleStyle.borderColor,
+              } : null,
             ]}>
               <Text style={[
                 styles.bubbleText,

@@ -15,6 +15,7 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { useInventoryStore, ItemDef, SceneDef } from '../../store/inventoryStore';
 import { usePetStore } from '../../store/petStore';
+import { SKIN_RING_COLORS, DEFAULT_SKIN_RING, equippedItemId } from '../../config/appearance';
 
 // ============================================================
 // 子组件
@@ -58,6 +59,17 @@ function SceneCard({
 // ============================================================
 
 type TabType = 'equip' | 'home' | 'collection';
+
+// 与后端 VALID_SLOTS 对齐的 7 个装备槽位
+const EQUIP_SLOTS: { key: string; label: string }[] = [
+  { key: 'hat', label: '头饰' },
+  { key: 'clothing', label: '衣服' },
+  { key: 'accessory', label: '配饰' },
+  { key: 'effect', label: '特效' },
+  { key: 'skin', label: '皮肤' },
+  { key: 'frame', label: '头像框' },
+  { key: 'bubble', label: '气泡' },
+];
 
 export default function InventoryScreen() {
   const { pet } = usePetStore();
@@ -147,12 +159,19 @@ export default function InventoryScreen() {
             <>
               {/* 当前装备展示 */}
               <View style={styles.equipPreview}>
-                <View style={styles.petDisplay}>
+                <View
+                  style={[
+                    styles.petDisplay,
+                    equippedItemId(equips, 'skin')
+                      ? [styles.petDisplaySkinned, { borderColor: SKIN_RING_COLORS[equippedItemId(equips, 'skin') || ''] || DEFAULT_SKIN_RING }]
+                      : null,
+                  ]}
+                >
                   <Text style={styles.petDisplayEmoji}>
                     {pet.stage === 'egg' ? '🥚' : pet.stage === 'adult' ? '😺' : '🐱'}
                   </Text>
                   {/* 已装备物品叠加显示 */}
-                  {equips.map(e => (
+                  {equips.filter(e => ['hat', 'clothing', 'accessory', 'effect'].includes(e.slot)).map(e => (
                     <Text key={e.slot} style={styles.equippedIcon}>{e.icon}</Text>
                   ))}
                 </View>
@@ -161,9 +180,8 @@ export default function InventoryScreen() {
 
               {/* 装备槽位 */}
               <View style={styles.equipSlots}>
-                {['hat', 'clothing', 'accessory', 'effect'].map(slot => {
+                {EQUIP_SLOTS.map(({ key: slot, label: slotLabel }) => {
                   const equipped = equips.find(e => e.slot === slot);
-                  const slotLabel = { hat: '头饰', clothing: '衣服', accessory: '配饰', effect: '特效' }[slot] || slot;
                   return (
                     <View key={slot} style={styles.slotRow}>
                       <Text style={styles.slotLabel}>{slotLabel}</Text>
@@ -312,6 +330,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     position: 'relative',
   },
+  petDisplaySkinned: { borderWidth: 4 },
   petDisplayEmoji: { fontSize: 50 },
   equippedIcon: { position: 'absolute', fontSize: 18, bottom: -2, right: -2 },
   petDisplayName: { fontSize: 18, fontWeight: '700', color: '#5A4A4A', marginTop: 10 },

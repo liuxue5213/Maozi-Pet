@@ -44,6 +44,9 @@ inventoryRouter.get('/items', authMiddleware, (req: Request, res: Response) => {
       { id: 'clothing', name: '衣服', icon: '👕' },
       { id: 'accessory', name: '配饰', icon: '🎀' },
       { id: 'effect', name: '特效', icon: '✨' },
+      { id: 'skin', name: '皮肤', icon: '🐱' },
+      { id: 'frame', name: '头像框', icon: '🖼️' },
+      { id: 'bubble', name: '气泡', icon: '💬' },
     ],
   });
 });
@@ -302,6 +305,9 @@ inventoryRouter.get('/collection', authMiddleware, (req: Request, res: Response)
     { id: 'clothing', name: '衣服', icon: '👕' },
     { id: 'accessory', name: '配饰', icon: '🎀' },
     { id: 'effect', name: '特效', icon: '✨' },
+    { id: 'skin', name: '皮肤', icon: '🐱' },
+    { id: 'frame', name: '头像框', icon: '🖼️' },
+    { id: 'bubble', name: '气泡', icon: '💬' },
   ];
 
   const collectionByCategory = categories.map(cat => {
@@ -336,20 +342,32 @@ inventoryRouter.get('/collection', authMiddleware, (req: Request, res: Response)
   });
 });
 
-// 赠送初始物品（新用户注册时调用）
+// 赠送初始物品（新用户注册时调用；幂等，重复调用只返回本轮新发放的物品）
 inventoryRouter.post('/claim-starter', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
 
-  const starterItems = ['cloth_tshirt', 'acc_bow', 'effect_heart'];
+  const starterItems = [
+    { id: 'cloth_tshirt', name: 'T恤' },
+    { id: 'acc_bow', name: '蝴蝶结' },
+    { id: 'effect_heart', name: '爱心气泡' },
+  ];
   const now = new Date().toISOString();
+  const granted: { id: string; name: string }[] = [];
 
-  starterItems.forEach(itemId => {
-    const existing = db.prepare('SELECT id FROM user_items WHERE user_id = ? AND item_id = ?').get(userId, itemId);
-    if (!existing) {
-      db.prepare('INSERT INTO user_items (user_id, item_id, quantity, acquired_at) VALUES (?, ?, 1, ?)').run(userId, itemId, now);
-      db.prepare('INSERT OR IGNORE INTO collection_records (user_id, item_id, collected_at) VALUES (?, ?, ?)').run(userId, itemId, now);
-    }
+  transaction((tx) => {
+    starterItems.forEach(({ id, name }) => {
+      const existing = tx.prepare('SELECT id FROM user_items WHERE user_id = ? AND item_id = ?').get(userId, id);
+      if (!existing) {
+        tx.prepare('INSERT INTO user_items (user_id, item_id, quantity, acquired_at) VALUES (?, ?, 1, ?)').run(userId, id, now);
+        tx.prepare('INSERT OR IGNORE INTO collection_records (user_id, item_id, collected_at) VALUES (?, ?, ?)').run(userId, id, now);
+        granted.push({ id, name });
+      }
+    });
   });
 
-  res.json({ message: '新手礼包已领取！', items: starterItems });
+  res.json({
+    message: granted.length > 0 ? '新手礼包已领取！' : '礼包之前已经领过啦',
+    granted,
+    items: starterItems.map(i => i.id),
+  });
 });

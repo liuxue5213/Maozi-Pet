@@ -20,6 +20,7 @@ import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { usePetStore, INTERACTION_LABELS } from '../../store/petStore';
 import { useInventoryStore } from '../../store/inventoryStore';
 import { apiFetch } from '../../config/env';
+import { SKIN_RING_COLORS, DEFAULT_SKIN_RING, equippedItemId } from '../../config/appearance';
 import { useRef } from 'react';
 
 const { width } = Dimensions.get('window');
@@ -73,6 +74,7 @@ interface EquippedItem {
 }
 
 // 已装备物品在宠物圆盘上的摆放位置（按槽位）
+// skin/frame/bubble 不在此渲染：skin → 圆盘描边色，frame → 个人头像描边，bubble → 聊天气泡配色
 const EQUIP_POSITIONS: Record<string, { top?: number; bottom?: number; left?: number; right?: number }> = {
   hat: { top: 8, right: 18 },
   clothing: { bottom: 10, left: 18 },
@@ -100,12 +102,23 @@ function PetAvatar({ stage, mood, equips }: { stage: string; mood: number; equip
     return '🐱';
   };
 
+  // 皮肤装备 → 圆盘描边换色（买来的花色看得见）
+  const skinItemId = equippedItemId(equips, 'skin');
+  const skinRing = (skinItemId && SKIN_RING_COLORS[skinItemId]) || DEFAULT_SKIN_RING;
+
   return (
-    <Animated.View style={[styles.petContainer, { transform: [{ scale: scaleAnim }] }]}>
+    <Animated.View
+      style={[
+        styles.petContainer,
+        { transform: [{ scale: scaleAnim }] },
+        skinItemId ? styles.petContainerSkinned : null,
+        skinItemId ? { borderColor: skinRing } : null,
+      ]}
+    >
       <Text style={styles.petEmoji}>{getPetEmoji()}</Text>
-      {/* 渲染已装备的装扮（商城购买后在此生效） */}
-      {equips.map(e => (
-        <Text key={e.slot} style={[styles.equipIcon, EQUIP_POSITIONS[e.slot] || { top: 0, right: 0 }]}>
+      {/* 渲染已装备的装扮（只画有坐标的槽位，避免未知槽位叠在头饰位置） */}
+      {equips.filter(e => EQUIP_POSITIONS[e.slot]).map(e => (
+        <Text key={e.slot} style={[styles.equipIcon, EQUIP_POSITIONS[e.slot]]}>
           {e.icon}
         </Text>
       ))}
@@ -613,6 +626,7 @@ const styles = StyleSheet.create({
     }),
   },
   petEmoji: { fontSize: 100 },
+  petContainerSkinned: { borderWidth: 6 },
   equipIcon: {
     position: 'absolute',
     fontSize: 26,

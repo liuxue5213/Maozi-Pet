@@ -13,7 +13,10 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Alert } from 'react-native';
 import { usePetStore, Personality } from '../store/petStore';
+import { useInventoryStore } from '../store/inventoryStore';
+import { apiFetch } from '../config/env';
 
 const PERSONALITIES: { key: Personality; emoji: string; label: string; desc: string }[] = [
   { key: 'cute', emoji: '🧸', label: '软萌治愈', desc: '软糯黏人，满嘴撒娇' },
@@ -36,6 +39,19 @@ export default function OnboardingScreen() {
     setHatchError('');
     try {
       await createPet(finalName, selected);
+      // 新手礼包：幂等领取，只有本轮真正发放的物品才提示（老用户重复孵化不误报）
+      try {
+        const result = await apiFetch<{ granted: { id: string; name: string }[] }>('/inventory/claim-starter', { method: 'POST' });
+        if (result.granted.length > 0) {
+          await useInventoryStore.getState().fetchBackpack();
+          Alert.alert(
+            '🎁 新手礼包到账',
+            `${result.granted.map(i => i.name).join('、')} 已放入背包，去「背包」给${finalName}穿上吧！`
+          );
+        }
+      } catch {
+        // 礼包是增值体验，失败不打断孵化流程
+      }
       // 成功才返回首页，useFocusEffect 会自动刷新宠物数据
       router.push('/');
     } catch {

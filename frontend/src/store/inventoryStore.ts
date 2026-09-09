@@ -12,7 +12,7 @@ import { apiFetch } from '../config/env';
 export interface ItemDef {
   id: string;
   name: string;
-  category: 'hat' | 'clothing' | 'accessory' | 'effect';
+  category: 'hat' | 'clothing' | 'accessory' | 'effect' | 'skin' | 'frame' | 'bubble';
   icon: string;
   description?: string;
   priceCoins: number;
