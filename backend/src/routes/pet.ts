@@ -444,13 +444,6 @@ petRouter.post('/:petId/rps', authMiddleware, (req: Request, res: Response) => {
 
   const today = todayStr();
 
-  // 每日局数上限（含 0 时不允许继续）
-  const dailyRow = db.prepare('SELECT play_count FROM rps_daily WHERE user_id = ? AND game_date = ?').get(userId, today) as any;
-  if ((dailyRow?.play_count || 0) >= RPS_MAX_PLAYS_PER_DAY) {
-    res.status(400).json({ error: `帽子今天玩累了，明天再来陪它猜拳吧（每日 ${RPS_MAX_PLAYS_PER_DAY} 局）` });
-    return;
-  }
-
   let pet = applyOfflineDecay(rowToPet(row));
   const petChoice = randomChoice();
   const result = resolveRps(choice, petChoice);
@@ -469,7 +462,17 @@ petRouter.post('/:petId/rps', authMiddleware, (req: Request, res: Response) => {
 
   const updates = petToDb(pet);
   let coinReward = 0;
+  let capped = false;
+  let finalPlayCount = 0;
   transaction((tx) => {
+    // 每日局数上限在事务内判定（防并发刷局）
+    const capRow = tx.prepare('SELECT play_count FROM rps_daily WHERE user_id = ? AND game_date = ?').get(userId, today) as any;
+    if ((capRow?.play_count || 0) >= RPS_MAX_PLAYS_PER_DAY) {
+      capped = true;
+      return;
+    }
+    finalPlayCount = (capRow?.play_count || 0) + 1;
+
     // 金币与日常互动共享每日产出预算（防通胀）
     const dailyRecord = tx.prepare('SELECT * FROM daily_interactions WHERE user_id = ? AND interaction_date = ?').get(userId, today) as any;
     const currentCoins = dailyRecord?.coins_earned || 0;
@@ -508,6 +511,11 @@ petRouter.post('/:petId/rps', authMiddleware, (req: Request, res: Response) => {
     } catch { /* 统计失败不影响游戏 */ }
   });
 
+  if (capped) {
+    res.status(400).json({ error: `帽子今天玩累了，明天再来陪它猜拳吧（每日 ${RPS_MAX_PLAYS_PER_DAY} 局）` });
+    return;
+  }
+
   let message = getRpsMessage(row.personality, row.name, result as RpsResult, petChoice);
   if (growth.leveledUp) message += ` ⬆️ 升级到 Lv.${pet.level}！`;
   if (coinReward > 0) message += ` 🪙+${coinReward}`;
@@ -515,7 +523,6 @@ petRouter.post('/:petId/rps', authMiddleware, (req: Request, res: Response) => {
   bumpTaskProgress(userId, 'interact3');
 
   const userCoins = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any)?.coins || 0;
-  const playCount = ((dailyRow?.play_count || 0) as number) + 1;
 
   res.json({
     result,
@@ -524,8 +531,8 @@ petRouter.post('/:petId/rps', authMiddleware, (req: Request, res: Response) => {
     message,
     coinReward,
     totalCoins: userCoins,
-    playsToday: playCount,
-    playsLeft: RPS_MAX_PLAYS_PER_DAY - playCount,
+    playsToday: finalPlayCount,
+    playsLeft: RPS_MAX_PLAYS_PER_DAY - finalPlayCount,
   });
 });
 
