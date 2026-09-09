@@ -2,6 +2,16 @@
 
 > Run 日志（最新在上）
 
+## Run @2026-09-10 04:15-04:21（第二夜迭代 会话B：第 13 轮 = 推送免打扰时段，P3 收尾）
+- 竞品印证：aidorable 免打扰原则（频繁推送有害）——前轮已做"每宠物每类型每日 1 条"，本轮补最后一块：**用户自定义静音窗口**
+- 完成：**推送免打扰时段**
+  · users 表 push_quiet_start/end（ensureColumn 迁移，"HH:MM"，NULL=不启用）
+  · utils/push.ts `isWithinQuietHours` 纯函数：同日窗口 + 跨零点窗口（22:00~08:00）+ 非法输入不启用 + 起止相同视为关闭；5 个单测
+  · collectCarePushes 扫描时静默跳过窗口内目标（**不占当日名额**，出窗口后照常推送）
+  · GET/POST /api/push/settings（非法输入归一为关闭）+ profile 页时段设置 UI（输入+保存+清除）
+- 端到端实测：全天窗口内 dispatch attempted=0、push_sent 零写入；关闭后 attempted=2、推送记录落库、假令牌被 Expo 判 DeviceNotRegistered 自动清理 ✅
+- 测试：71 单测全绿 + 双端 typecheck + Web 构建
+
 ## Run @2026-09-10 04:00-04:15（第二夜迭代 会话B：第 12 轮 = 对抗式走查 + 修复）
 - **全量走查今晚新增代码，发现并修复 6 个真实缺陷**：
   1. 🔴 猜数字落败也返回 `result:'correct'` + 胜利文案 → 落败改返 `result:'lost'` + 公布谜底文案，前端补落败分支
