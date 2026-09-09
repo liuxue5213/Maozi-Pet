@@ -13,10 +13,12 @@ import {
   Modal,
   Alert,
   Platform,
+  Share,
   KeyboardAvoidingView,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { usePetStore } from '../../store/petStore';
+import { apiFetch } from '../../config/env';
 
 export default function ChatScreen() {
   const { pet, chatHistory, sendMessage, loadHistory, memories, memoriesLoading, fetchMemories, forgetMemory } = usePetStore();
@@ -75,6 +77,36 @@ export default function ChatScreen() {
         },
       },
     ]);
+  };
+
+  // 导出记忆（可带走：Web 下载 JSON / 原生系统分享）
+  const handleExport = async () => {
+    if (!pet) return;
+    try {
+      const data = await apiFetch<{
+        pet: { name: string; personality: string; stage: string; level: number };
+        total: number;
+        memories: { content: string; created_at: string }[];
+      }>(`/ai/memories/${pet.id}/export`);
+
+      if (Platform.OS === 'web') {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `帽子记忆-${data.pet.name}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const lines = data.memories.map(m => `· ${m.content}（${m.created_at.slice(0, 10)}）`).join('\n');
+        await Share.share({
+          title: `帽子记忆-${data.pet.name}`,
+          message: `🐱 ${data.pet.name} 记得的 ${data.total} 件关于我的事：\n${lines || '（还没有记忆）'}`,
+        });
+      }
+    } catch (err: any) {
+      Alert.alert('提示', err.message || '导出失败，请重试');
+    }
   };
 
   if (!pet) {
@@ -163,9 +195,16 @@ export default function ChatScreen() {
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>🧠 它记得的事</Text>
-              <TouchableOpacity onPress={() => setShowMemories(false)}>
-                <Text style={styles.modalClose}>完成</Text>
-              </TouchableOpacity>
+              <View style={styles.modalHeaderActions}>
+                {memories.length > 0 && (
+                  <TouchableOpacity style={styles.exportBtn} onPress={handleExport}>
+                    <Text style={styles.exportBtnText}>📥 导出</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity onPress={() => setShowMemories(false)}>
+                  <Text style={styles.modalClose}>完成</Text>
+                </TouchableOpacity>
+              </View>
             </View>
             <FlatList
               data={memories}
@@ -230,6 +269,14 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 16, fontWeight: '600', color: '#5A4A4A' },
   modalClose: { fontSize: 14, color: '#FF9F43', fontWeight: '600' },
+  modalHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  exportBtn: {
+    backgroundColor: '#E8F8F5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  exportBtnText: { fontSize: 12, color: '#5A7A6A', fontWeight: '600' },
   memoryRow: {
     flexDirection: 'row',
     alignItems: 'center',

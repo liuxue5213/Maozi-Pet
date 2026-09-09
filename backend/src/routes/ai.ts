@@ -220,6 +220,45 @@ aiRouter.get('/memories/:petId', authMiddleware, (req: Request, res: Response) =
   res.json({ memories: rows });
 });
 
+// --- 导出记忆（可带走的信任特性：AI 停服恐慌事件的正面回应） ---
+aiRouter.get('/memories/:petId/export', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { petId } = req.params;
+
+  const pet = db.prepare(`
+    SELECT id, name, personality, stage, level, created_at FROM pets
+    WHERE id = ? AND user_id = ?
+  `).get(petId, userId) as any;
+  if (!pet) {
+    res.status(404).json({ error: '宠物不存在' });
+    return;
+  }
+
+  const memories = db.prepare(`
+    SELECT content, created_at FROM pet_memories
+    WHERE user_id = ? AND pet_id = ?
+    ORDER BY created_at ASC, id ASC
+  `).all(userId, petId) as any[];
+
+  const owner = db.prepare('SELECT nickname FROM users WHERE id = ?').get(userId) as any;
+
+  res.json({
+    app: '帽子AI宠物',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    owner: owner?.nickname || null,
+    pet: {
+      name: pet.name,
+      personality: pet.personality,
+      stage: pet.stage,
+      level: pet.level,
+      createdAt: pet.created_at,
+    },
+    total: memories.length,
+    memories,
+  });
+});
+
 // --- 遗忘一条记忆 ---
 aiRouter.delete('/memories/:petId/:memoryId', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
