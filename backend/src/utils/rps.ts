@@ -59,7 +59,7 @@ export function getRpsMessage(personality: string, petName: string, result: RpsR
     calm: {
       win: [`${hand[petChoice]} 这一局，是${petName}赢了`, `${hand[petChoice]} 胜负乃常事，开心就好`],
       lose: [`${hand[petChoice]} 主人的手势，比风还难猜`, `${hand[petChoice]} 输了也好，主人开心便好`],
-      draw: [`${hand[petChoice]} 不分胜负，刚刚好`, `${hand[petChoice]} 平局，像安静的第下午`],
+      draw: [`${hand[petChoice]} 不分胜负，刚刚好`, `${hand[petChoice]} 平局，像安静的下午`],
     },
     cool: {
       win: [`${hand[petChoice]} 预料之中`, `${hand[petChoice]} 赢了。下一个`],
