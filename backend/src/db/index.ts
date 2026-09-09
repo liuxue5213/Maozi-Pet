@@ -330,6 +330,14 @@ db.exec(`
     UNIQUE(visitor_id, pet_id, type, visit_date)
   );
   CREATE INDEX IF NOT EXISTS idx_visit_interactions_owner ON friend_visit_interactions(owner_id, visit_date);
+
+  -- 成就徽章（解锁后永久保留，跨宠物存在）
+  CREATE TABLE IF NOT EXISTS user_achievements (
+    user_id TEXT NOT NULL,
+    achievement_id TEXT NOT NULL,
+    unlocked_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, achievement_id)
+  );
 `);
 
 // ============================================================

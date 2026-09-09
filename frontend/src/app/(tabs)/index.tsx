@@ -456,6 +456,13 @@ export default function HomeScreen() {
         </View>
       )}
 
+      {/* 成就徽章入口 */}
+      <Link href="/achievements" asChild>
+        <TouchableOpacity style={styles.achievementEntry}>
+          <Text style={styles.achievementEntryText}>🏆 成就徽章墙</Text>
+        </TouchableOpacity>
+      </Link>
+
       {/* 属性面板 */}
       <View style={styles.statsPanel}>
         <Text style={styles.statsTitle}>状态</Text>
@@ -643,6 +650,18 @@ const styles = StyleSheet.create({
   primaryBtnText: { fontSize: 16, fontWeight: '600', color: '#FFF' },
   archiveLink: { marginTop: 20, paddingVertical: 6 },
   archiveLinkText: { fontSize: 13, color: '#BBB' },
+  achievementEntry: {
+    backgroundColor: '#FFF',
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 18,
+    marginBottom: 16,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4 },
+      android: { elevation: 2 },
+    }),
+  },
+  achievementEntryText: { fontSize: 13, fontWeight: '600', color: '#B8860B' },
 
   // 猜拳小游戏弹窗
   rpsContainer: { flex: 1, backgroundColor: '#FFF5F7', alignItems: 'center' },
