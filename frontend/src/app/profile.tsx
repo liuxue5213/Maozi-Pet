@@ -10,6 +10,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Alert,
   Platform,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -79,6 +80,23 @@ export default function ProfileScreen() {
     router.replace('/login');
   };
 
+  // 切换隐私开关（乐观更新，失败回滚）
+  type PrivacyKey = 'showOnSquare' | 'allowStrangerInteract' | 'hidePetInfo';
+  const handleTogglePrivacy = async (key: PrivacyKey, value: boolean) => {
+    if (!profile) return;
+    const prev = profile;
+    setProfile({ ...profile, privacy: { ...profile.privacy, [key]: value } });
+    try {
+      await apiFetch('/auth/privacy', {
+        method: 'PUT',
+        body: JSON.stringify({ privacy: { [key]: value } }),
+      });
+    } catch (err: any) {
+      setProfile(prev);
+      Alert.alert('提示', '设置失败，请重试');
+    }
+  };
+
   if (!profile) {
     return (
       <View style={styles.loading}>
@@ -113,14 +131,14 @@ export default function ProfileScreen() {
               value={editNickname}
               onChangeText={setEditNickname}
               placeholder="昵称"
-              maxLength={10}
+              maxLength={20}
             />
             <TextInput
               style={styles.bioInput}
               value={editBio}
               onChangeText={setEditBio}
               placeholder="写点什么介绍自己..."
-              maxLength={50}
+              maxLength={100}
               multiline
             />
             <View style={styles.editActions}>
@@ -183,9 +201,24 @@ export default function ProfileScreen() {
       {/* 隐私设置 */}
       <View style={styles.settingsCard}>
         <Text style={styles.settingsTitle}>隐私设置</Text>
-        <SettingRow label="广场展示" value={profile.privacy.showOnSquare} />
-        <SettingRow label="允许陌生人互动" value={profile.privacy.allowStrangerInteract} />
-        <SettingRow label="隐藏宠物信息" value={profile.privacy.hidePetInfo} />
+        <SettingRow
+          label="广场展示"
+          description="关闭后你的动态不会出现在广场"
+          value={profile.privacy.showOnSquare}
+          onToggle={v => handleTogglePrivacy('showOnSquare', v)}
+        />
+        <SettingRow
+          label="允许陌生人互动"
+          description="关闭后陌生人无法与你互动"
+          value={profile.privacy.allowStrangerInteract}
+          onToggle={v => handleTogglePrivacy('allowStrangerInteract', v)}
+        />
+        <SettingRow
+          label="隐藏宠物信息"
+          description="开启后好友串门看不到你的宠物详情"
+          value={profile.privacy.hidePetInfo}
+          onToggle={v => handleTogglePrivacy('hidePetInfo', v)}
+        />
       </View>
 
       {/* 账号类型 */}
@@ -218,14 +251,27 @@ export default function ProfileScreen() {
   );
 }
 
-function SettingRow({ label, value }: { label: string; value: boolean }) {
+function SettingRow({
+  label,
+  description,
+  value,
+  onToggle,
+}: {
+  label: string;
+  description?: string;
+  value: boolean;
+  onToggle: (v: boolean) => void;
+}) {
   return (
-    <View style={styles.settingRow}>
-      <Text style={styles.settingLabel}>{label}</Text>
+    <TouchableOpacity style={styles.settingRow} activeOpacity={0.7} onPress={() => onToggle(!value)}>
+      <View style={styles.settingTextWrap}>
+        <Text style={styles.settingLabel}>{label}</Text>
+        {description ? <Text style={styles.settingDesc}>{description}</Text> : null}
+      </View>
       <View style={[styles.toggle, value && styles.toggleOn]}>
         <View style={[styles.toggleDot, value && styles.toggleDotOn]} />
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -327,7 +373,9 @@ const styles = StyleSheet.create({
   },
   settingsTitle: { fontSize: 15, fontWeight: '600', color: '#5A4A4A', marginBottom: 8 },
   settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 },
+  settingTextWrap: { flex: 1, paddingRight: 12 },
   settingLabel: { fontSize: 14, color: '#666' },
+  settingDesc: { fontSize: 11, color: '#C0A8A8', marginTop: 2 },
   toggle: { width: 44, height: 24, borderRadius: 12, backgroundColor: '#E0E0E0', padding: 2 },
   toggleOn: { backgroundColor: '#FF9F43' },
   toggleDot: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFF' },
