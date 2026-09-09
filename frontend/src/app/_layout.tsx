@@ -57,6 +57,7 @@ export default function RootLayout() {
         <Stack.Screen name="onboarding" options={{ title: '孵化新宠物' }} />
         <Stack.Screen name="register" options={{ title: '注册正式账号' }} />
         <Stack.Screen name="archive" options={{ title: '宠物档案馆' }} />
+        <Stack.Screen name="poster" options={{ title: '纪念海报' }} />
         <Stack.Screen name="profile" options={{ headerShown: false }} />
       </Stack>
     </ErrorBoundary>

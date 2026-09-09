@@ -357,6 +357,30 @@ db.exec(`
     sent_date TEXT NOT NULL,
     PRIMARY KEY (pet_id, kind, sent_date)
   );
+
+  -- 猜数字：进行中对局（谜底存服务端防作弊；一人同时最多一局活跃）
+  CREATE TABLE IF NOT EXISTS guess_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    pet_id TEXT NOT NULL,
+    secret INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 7,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_guess_sessions_user_status ON guess_sessions(user_id, status);
+
+  -- 猜数字：每日局数统计
+  CREATE TABLE IF NOT EXISTS guess_daily (
+    user_id TEXT NOT NULL,
+    game_date TEXT NOT NULL,
+    game_count INTEGER NOT NULL DEFAULT 0,
+    win_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, game_date)
+  );
 `);
 
 // ============================================================

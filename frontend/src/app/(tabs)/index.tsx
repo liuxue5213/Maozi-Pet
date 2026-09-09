@@ -3,7 +3,7 @@
  * 80% 区域展示宠物，底部 Tab 导航
  * 修复：页面获得焦点时自动刷新宠物数据
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   Platform,
   ActivityIndicator,
   Modal,
+  TextInput,
 } from 'react-native';
 import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { usePetStore, INTERACTION_LABELS } from '../../store/petStore';
@@ -49,6 +50,16 @@ interface RpsRound {
   message: string;
   coinReward: number;
   playsLeft: number;
+}
+
+// 猜数字小游戏状态
+interface GuessState {
+  sessionId: number;
+  attemptsUsed: number;
+  attemptsLeft: number;
+  maxAttempts: number;
+  history: { text: string; type: 'hint-up' | 'hint-down' | 'info' }[];
+  finished: boolean;
 }
 
 interface DailyTask {
@@ -271,6 +282,166 @@ function RpsModal({
   );
 }
 
+// 猜数字小游戏弹窗（帽子想一个 1~100 的数；每局+心情，赢了+金币，输了不惩罚）
+function GuessModal({
+  visible,
+  onClose,
+  petName,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  petName: string;
+}) {
+  const [game, setGame] = useState<GuessState | null>(null);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const petId = usePetStore.getState().pet?.id;
+
+  const startGame = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await apiFetch<{
+        sessionId: number; attemptsUsed: number; attemptsLeft: number; maxAttempts: number; resumed: boolean; message: string;
+      }>(`/pet/${petId}/guess/start`, { method: 'POST' });
+      setGame({
+        sessionId: result.sessionId,
+        attemptsUsed: result.attemptsUsed,
+        attemptsLeft: result.attemptsLeft,
+        maxAttempts: result.maxAttempts,
+        history: [{ text: result.message, type: 'info' }],
+        finished: false,
+      });
+      setInput('');
+    } catch (err: any) {
+      setError(err.message || '开局失败，再试一次喵');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 打开弹窗自动开局
+  useEffect(() => {
+    if (visible && !game) startGame();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const handleGuess = async () => {
+    if (!game || busy) return;
+    const n = parseInt(input, 10);
+    if (!Number.isInteger(n) || n < 1 || n > 100) {
+      setError('请输入 1~100 的整数');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const result = await apiFetch<{
+        result: 'higher' | 'lower' | 'correct';
+        attemptsUsed?: number;
+        attemptsLeft?: number;
+        secret?: number;
+        pet?: any;
+        coinReward?: number;
+        totalCoins?: number;
+        message: string;
+      }>(`/pet/${petId}/guess`, {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: game.sessionId, number: n }),
+      });
+
+      if (result.result === 'correct') {
+        setGame(g => g ? {
+          ...g,
+          finished: true,
+          history: [...g.history, { text: result.message, type: 'info' }],
+        } : g);
+        if (typeof result.totalCoins === 'number') usePetStore.getState().updateCoins(result.totalCoins);
+        await usePetStore.getState().fetchPet();
+      } else {
+        setGame(g => g ? {
+          ...g,
+          attemptsUsed: result.attemptsUsed ?? g.attemptsUsed,
+          attemptsLeft: result.attemptsLeft ?? g.attemptsLeft,
+          history: [...g.history, { text: result.message, type: result.result === 'higher' ? 'hint-up' : 'hint-down' }],
+        } : g);
+        // 用满次数 = 落败（不惩罚，仍 +心情），结束本局
+        if ((result.attemptsLeft ?? 1) <= 0) {
+          setGame(g => g ? { ...g, finished: true } : g);
+        }
+      }
+      setInput('');
+    } catch (err: any) {
+      setError(err.message || '出错了，再试一次喵');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleClose = () => {
+    setGame(null);
+    setError('');
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+      <View style={styles.rpsContainer}>
+        <View style={styles.rpsHeader}>
+          <Text style={styles.rpsTitle}>🔢 和{petName}玩猜数字</Text>
+          <TouchableOpacity onPress={handleClose}>
+            <Text style={styles.rpsClose}>✕</Text>
+          </TouchableOpacity>
+        </View>
+
+        {game && (
+          <>
+            {/* 剩余次数 */}
+            <Text style={styles.guessAttempts}>
+              剩余机会 {'❤️'.repeat(Math.max(0, game.attemptsLeft))}{'🤍'.repeat(Math.max(0, game.maxAttempts - game.attemptsLeft))}
+            </Text>
+
+            {/* 提示历史 */}
+            <View style={styles.guessHistory}>
+              {game.history.map((h, i) => (
+                <Text key={i} style={styles.guessHistoryText}>{h.text}</Text>
+              ))}
+            </View>
+
+            {error.length > 0 && <Text style={styles.rpsError}>{error}</Text>}
+
+            {/* 输入 + 猜 */}
+            {!game.finished ? (
+              <View style={styles.guessInputRow}>
+                <TextInput
+                  style={styles.guessInput}
+                  value={input}
+                  onChangeText={setInput}
+                  placeholder="1~100"
+                  placeholderTextColor="#CCC"
+                  keyboardType="number-pad"
+                  maxLength={3}
+                />
+                <TouchableOpacity style={styles.guessBtn} onPress={handleGuess} disabled={busy}>
+                  <Text style={styles.guessBtnText}>{busy ? '...' : '猜！'}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.guessBtn} onPress={startGame} disabled={busy}>
+                <Text style={styles.guessBtnText}>{busy ? '...' : '🔄 再来一局'}</Text>
+              </TouchableOpacity>
+            )}
+
+            <Text style={styles.rpsRule}>猜对 +🪙10~20（越快越多）· 猜不中也 +心情 · 每日 5 局</Text>
+          </>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
 // ============================================================
 // 主页面
 // ============================================================
@@ -289,6 +460,7 @@ export default function HomeScreen() {
   const [interactMessage, setInteractMessage] = useState('');
   const [tasks, setTasks] = useState<DailyTask[]>([]);
   const [rpsVisible, setRpsVisible] = useState(false);
+  const [guessVisible, setGuessVisible] = useState(false);
   const [retireVisible, setRetireVisible] = useState(false);
   const [retireBusy, setRetireBusy] = useState(false);
   const eventAttempted = useRef(false); // 每次进入 app 只尝试拉取一次随机事件
@@ -470,10 +642,16 @@ export default function HomeScreen() {
         ))}
         {/* 蛋阶段不会猜拳，成年玩法；睡觉时不玩 */}
         {pet.stage !== 'egg' && !isSleeping && (
-          <TouchableOpacity style={styles.actionBtn} onPress={() => setRpsVisible(true)} activeOpacity={0.7}>
-            <Text style={styles.actionIcon}>🎮</Text>
-            <Text style={styles.actionLabel}>猜拳</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity style={styles.actionBtn} onPress={() => setRpsVisible(true)} activeOpacity={0.7}>
+              <Text style={styles.actionIcon}>🎮</Text>
+              <Text style={styles.actionLabel}>猜拳</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionBtn} onPress={() => setGuessVisible(true)} activeOpacity={0.7}>
+              <Text style={styles.actionIcon}>🔢</Text>
+              <Text style={styles.actionLabel}>猜数字</Text>
+            </TouchableOpacity>
+          </>
         )}
         {/* 作息入口：哄睡 / 叫醒（蛋不需要睡觉） */}
         {pet.stage !== 'egg' && (
@@ -492,6 +670,13 @@ export default function HomeScreen() {
       <RpsModal
         visible={rpsVisible}
         onClose={() => setRpsVisible(false)}
+        petName={pet.name}
+      />
+
+      {/* 猜数字小游戏 */}
+      <GuessModal
+        visible={guessVisible}
+        onClose={() => setGuessVisible(false)}
         petName={pet.name}
       />
 
@@ -876,4 +1061,41 @@ const styles = StyleSheet.create({
   rpsChoiceEmoji: { fontSize: 34 },
   rpsChoiceLabel: { fontSize: 12, color: '#777', marginTop: 2 },
   rpsRule: { fontSize: 11, color: '#BBB', marginTop: 24, textAlign: 'center', paddingHorizontal: 24 },
+
+  // 猜数字小游戏弹窗
+  guessAttempts: { fontSize: 14, marginTop: 32, marginBottom: 12, color: '#5A4A4A' },
+  guessHistory: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    width: '86%',
+    minHeight: 100,
+    justifyContent: 'center',
+    marginBottom: 20,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8 },
+      android: { elevation: 3 },
+    }),
+  },
+  guessHistoryText: { fontSize: 14, color: '#5A4A4A', lineHeight: 24, textAlign: 'center' },
+  guessInputRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  guessInput: {
+    width: 120,
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FF9F43',
+    textAlign: 'center',
+  },
+  guessBtn: {
+    backgroundColor: '#FF9F43',
+    borderRadius: 24,
+    paddingHorizontal: 28,
+    paddingVertical: 13,
+  },
+  guessBtnText: { fontSize: 15, fontWeight: '700', color: '#FFF' },
 });

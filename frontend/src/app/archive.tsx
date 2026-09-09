@@ -14,7 +14,7 @@ import {
   Modal,
   ActivityIndicator,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { apiFetch } from '../config/env';
 
 interface RetiredPet {
@@ -128,6 +128,7 @@ function MemoryDiaryModal({
 // ============================================================
 
 export default function ArchiveScreen() {
+  const router = useRouter();
   const [pets, setPets] = useState<RetiredPet[] | null>(null);
   const [diaryPet, setDiaryPet] = useState<RetiredPet | null>(null);
 
@@ -183,6 +184,12 @@ export default function ArchiveScreen() {
                 <TouchableOpacity style={styles.diaryBtn} onPress={() => setDiaryPet(pet)}>
                   <Text style={styles.diaryBtnText}>📖 记忆日记</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.diaryBtn}
+                  onPress={() => router.push(`/poster?petId=${pet.id}`)}
+                >
+                  <Text style={styles.diaryBtnText}>🎴 纪念海报</Text>
+                </TouchableOpacity>
                 <Text style={styles.retiredBadge}>🌟 荣誉退休</Text>
               </View>
             </View>
@@ -229,7 +236,7 @@ const styles = StyleSheet.create({
   petInfo: { flex: 1 },
   petName: { fontSize: 17, fontWeight: '700', color: '#5A4A4A', marginBottom: 4 },
   petMeta: { fontSize: 12, color: '#999', marginTop: 2 },
-  cardActions: { alignItems: 'flex-end', gap: 8 },
+  cardActions: { alignItems: 'flex-end', gap: 8, flexShrink: 0 },
   diaryBtn: {
     backgroundColor: '#E8F8F5',
     paddingHorizontal: 12,

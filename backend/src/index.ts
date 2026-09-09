@@ -17,6 +17,7 @@ import { tasksRouter } from './routes/tasks';
 import { achievementsRouter } from './routes/achievements';
 import { pushRouter } from './routes/push';
 import { dispatchPetCarePushes } from './utils/push';
+import { startTokenCleanupLoop } from './utils/tokens';
 
 // 加载环境变量
 dotenv.config();
@@ -121,6 +122,9 @@ if (process.env.PUSH_ENABLED !== 'false') {
       .catch(err => console.error('推送扫描失败:', err.message));
   }, 30 * 60 * 1000);
 }
+
+// 过期登录令牌清理：启动时一次 + 每 6 小时
+startTokenCleanupLoop();
 
 // Graceful Shutdown
 function shutdown(signal: string) {

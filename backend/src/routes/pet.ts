@@ -14,6 +14,11 @@ import {
   RPS_MAX_PLAYS_PER_DAY, RPS_REWARDS, RPS_ENERGY_COST,
   RpsResult,
 } from '../utils/rps';
+import {
+  evaluateGuess, getGuessHintMessage, getGuessLoseMessage, getGuessWinMessage,
+  guessWinCoins, isGuessNumber, newSecret,
+  GUESS_MAX_ATTEMPTS, GUESS_MAX_GAMES_PER_DAY,
+} from '../utils/guess';
 
 export const petRouter = Router();
 
@@ -651,6 +656,209 @@ petRouter.post('/:petId/wake', authMiddleware, (req: Request, res: Response) => 
     message,
     minutesAsleep: minutes,
     energyRecovered,
+  });
+});
+
+// ============================================================
+// 猜数字小游戏（谜底存服务端防作弊；每局 +心情，赢局 +金币，输了不惩罚）
+// ============================================================
+
+// 开新局（有进行中的局则原样续玩，不重复扣每日局数）
+petRouter.post('/:petId/guess/start', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { petId } = req.params;
+
+  const row = db.prepare('SELECT * FROM pets WHERE id = ? AND user_id = ?').get(petId, userId) as PetRow | undefined;
+  if (!row) {
+    res.status(404).json({ error: '宠物不存在' });
+    return;
+  }
+  if (row.is_retired) {
+    res.status(400).json({ error: '退休的帽子要安心养老啦' });
+    return;
+  }
+  if (row.stage === 'egg') {
+    res.status(400).json({ error: '蛋蛋还不会想数字，先孵化吧~' });
+    return;
+  }
+  if (row.is_sleeping) {
+    res.status(400).json({ error: `${row.name} 睡着啦，梦里也要猜数吗 🌙` });
+    return;
+  }
+
+  const today = todayStr();
+
+  // 续玩进行中的局
+  const active = db.prepare(
+    "SELECT id, attempts, max_attempts FROM guess_sessions WHERE user_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1"
+  ).get(userId) as any;
+  if (active) {
+    res.json({
+      sessionId: active.id,
+      attemptsUsed: active.attempts,
+      attemptsLeft: active.max_attempts - active.attempts,
+      maxAttempts: active.max_attempts,
+      resumed: true,
+      message: '上一局还没猜完，继续！',
+    });
+    return;
+  }
+
+  // 每日局数上限（在事务内判定 + 写入，防并发刷局）
+  let capped = false;
+  transaction((tx) => {
+    const daily = tx.prepare('SELECT game_count FROM guess_daily WHERE user_id = ? AND game_date = ?').get(userId, today) as any;
+    if ((daily?.game_count || 0) >= GUESS_MAX_GAMES_PER_DAY) {
+      capped = true;
+      return;
+    }
+    tx.prepare(`
+      INSERT INTO guess_sessions (user_id, pet_id, secret, attempts, max_attempts, status, created_at, updated_at)
+      VALUES (?, ?, ?, 0, ?, 'active', ?, ?)
+    `).run(userId, petId, newSecret(), GUESS_MAX_ATTEMPTS, new Date().toISOString(), new Date().toISOString());
+  });
+
+  if (capped) {
+    res.status(400).json({ error: `帽子今天想累了，明天再来猜吧（每日 ${GUESS_MAX_GAMES_PER_DAY} 局）` });
+    return;
+  }
+
+  const session = db.prepare(
+    "SELECT id, attempts, max_attempts FROM guess_sessions WHERE user_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1"
+  ).get(userId) as any;
+
+  res.json({
+    sessionId: session.id,
+    attemptsUsed: 0,
+    attemptsLeft: session.max_attempts,
+    maxAttempts: session.max_attempts,
+    resumed: false,
+    message: `${row.name} 心里想好了一个 1~100 的数，猜猜看！`,
+  });
+});
+
+// 猜一次
+petRouter.post('/:petId/guess', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { petId } = req.params;
+  const { sessionId, number } = req.body;
+
+  if (!isGuessNumber(number)) {
+    res.status(400).json({ error: `请猜一个 ${1}~${100} 的整数` });
+    return;
+  }
+
+  const row = db.prepare('SELECT * FROM pets WHERE id = ? AND user_id = ?').get(petId, userId) as PetRow | undefined;
+  if (!row) {
+    res.status(404).json({ error: '宠物不存在' });
+    return;
+  }
+  if (row.is_sleeping) {
+    res.status(400).json({ error: `${row.name} 睡着啦，先叫醒它吧 🌙` });
+    return;
+  }
+
+  const session = db.prepare(
+    'SELECT * FROM guess_sessions WHERE id = ? AND user_id = ? AND pet_id = ?'
+  ).get(sessionId, userId, petId) as any;
+  if (!session) {
+    res.status(404).json({ error: '对局不存在，重新开局吧' });
+    return;
+  }
+  if (session.status !== 'active') {
+    res.status(400).json({ error: '这一局已经结束了，开新一局吧' });
+    return;
+  }
+
+  const pet = rowToPet(row);
+  const hint = evaluateGuess(session.secret, number);
+  const attemptsUsed = session.attempts + 1;
+  const won = hint === 'correct';
+  const lost = !won && attemptsUsed >= session.max_attempts;
+
+  let coinReward = 0;
+  let petOut = pet;
+
+  // 终局（胜/负）才结算属性、金币与每日局数
+  if (won || lost) {
+    const stats = { ...pet.stats };
+    stats.mood = Math.min(100, stats.mood + (won ? 8 : 5));
+    if (won) stats.energy = Math.max(10, stats.energy - 5);
+    petOut = { ...pet, stats, totalInteractions: pet.totalInteractions + 1 };
+    if (won) petOut = checkGrowth(petOut).pet;
+    petOut.updatedAt = new Date().toISOString();
+
+    const updates = petToDb(petOut);
+    const today = todayStr();
+    transaction((tx) => {
+      if (won) {
+        const dailyRecord = tx.prepare('SELECT coins_earned FROM daily_interactions WHERE user_id = ? AND interaction_date = ?').get(userId, today) as any;
+        const currentCoins = dailyRecord?.coins_earned || 0;
+        if (currentCoins < MAX_COINS_PER_DAY) {
+          coinReward = Math.min(guessWinCoins(attemptsUsed), MAX_COINS_PER_DAY - currentCoins);
+        }
+      }
+
+      tx.prepare(`
+        UPDATE pets SET
+          stats_hunger = ?, stats_cleanliness = ?, stats_mood = ?,
+          stats_energy = ?, stats_health = ?, level = ?, exp = ?, stage = ?,
+          total_interactions = ?, updated_at = ?
+        WHERE id = ?
+      `).run(updates.stats_hunger, updates.stats_cleanliness, updates.stats_mood,
+             updates.stats_energy, updates.stats_health, petOut.level, petOut.exp,
+             petOut.stage, petOut.totalInteractions, petOut.updatedAt, petId);
+
+      if (coinReward > 0) {
+        tx.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(coinReward, userId);
+        const dailyRecord = tx.prepare('SELECT id FROM daily_interactions WHERE user_id = ? AND interaction_date = ?').get(userId, today) as any;
+        if (dailyRecord) {
+          tx.prepare('UPDATE daily_interactions SET coins_earned = coins_earned + ? WHERE id = ?').run(coinReward, dailyRecord.id);
+        } else {
+          tx.prepare('INSERT INTO daily_interactions (user_id, interaction_date, count, coins_earned) VALUES (?, ?, 0, ?)').run(userId, today, coinReward);
+        }
+      }
+
+      tx.prepare('UPDATE guess_sessions SET status = ?, attempts = ?, updated_at = ? WHERE id = ?')
+        .run(won ? 'won' : 'lost', attemptsUsed, new Date().toISOString(), session.id);
+
+      // 每日局数统计（终局才 +1）
+      tx.prepare(`
+        INSERT INTO guess_daily (user_id, game_date, game_count, win_count)
+        VALUES (?, ?, 1, ?)
+        ON CONFLICT(user_id, game_date)
+        DO UPDATE SET game_count = game_count + 1, win_count = win_count + ?
+      `).run(userId, today, won ? 1 : 0, won ? 1 : 0);
+    });
+
+    if (won) bumpTaskProgress(userId, 'interact3');
+
+    let message = getGuessWinMessage(row.name, attemptsUsed);
+    if (petOut.level > pet.level) message += ` ⬆️ 升级到 Lv.${petOut.level}！`;
+    if (coinReward > 0) message += ` 🪙+${coinReward}`;
+    const userCoins = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any)?.coins || 0;
+
+    res.json({
+      result: 'correct',
+      secret: session.secret,
+      attemptsUsed,
+      pet: petOut,
+      coinReward,
+      totalCoins: userCoins,
+      message,
+    });
+    return;
+  }
+
+  // 未终局：只记次数 + 给方向提示（不消耗属性/金币）
+  db.prepare('UPDATE guess_sessions SET attempts = ?, updated_at = ? WHERE id = ?')
+    .run(attemptsUsed, new Date().toISOString(), session.id);
+
+  res.json({
+    result: hint,
+    attemptsUsed,
+    attemptsLeft: session.max_attempts - attemptsUsed,
+    message: getGuessHintMessage(hint, row.name, number),
   });
 });
 
