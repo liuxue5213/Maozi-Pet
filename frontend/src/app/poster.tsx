@@ -3,7 +3,7 @@
  * 把"独家养成记忆"变成可分享的身份认同（网易云年报式情感表达）
  * 数据来自 GET /social/poster/:petId，文案由后端按性格生成
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { apiFetch } from '../config/env';
 
@@ -45,6 +47,8 @@ export default function PosterScreen() {
   const { petId } = useLocalSearchParams<{ petId?: string }>();
   const [poster, setPoster] = useState<PosterData | null>(null);
   const [error, setError] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const posterCardRef = useRef<View>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -68,6 +72,32 @@ export default function PosterScreen() {
       });
     } catch {
       // 用户取消分享不处理
+    }
+  };
+
+  // 海报卡片截图 → 系统分享图片（Web 降级为文本分享）
+  const handleExportImage = async () => {
+    if (!poster || exporting) return;
+    if (Platform.OS === 'web') {
+      handleShare();
+      return;
+    }
+    setExporting(true);
+    try {
+      const uri = await captureRef(posterCardRef, { format: 'png', quality: 1 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'image/png',
+          dialogTitle: `分享 ${poster.petName} 的养成纪念海报`,
+        });
+      } else {
+        await handleShare();
+      }
+    } catch {
+      // 截图失败降级为文本分享
+      await handleShare();
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -96,7 +126,7 @@ export default function PosterScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* 海报卡片 */}
-      <View style={[styles.poster, { backgroundColor: style.bg, borderColor: style.accent }]}>
+      <View ref={posterCardRef} collapsable={false} style={[styles.poster, { backgroundColor: style.bg, borderColor: style.accent }]}>
         <Text style={[styles.posterBrand, { color: style.accent }]}>🐱 帽子AI宠物 · 独家养成记忆</Text>
         <Text style={styles.posterEmoji}>{style.emoji}</Text>
         <Text style={[styles.posterName, { color: style.accent }]}>{poster.petName}</Text>
@@ -121,9 +151,16 @@ export default function PosterScreen() {
         <Text style={styles.posterOwner}>—— {poster.ownerNickname} 与 {poster.petName}</Text>
       </View>
 
-      {/* 分享 */}
-      <TouchableOpacity style={[styles.shareBtn, { backgroundColor: style.accent }]} onPress={handleShare}>
-        <Text style={styles.shareBtnText}>🎴 分享这段记忆</Text>
+      {/* 分享：图片直出（社交平台标准），文本分享兜底 */}
+      <TouchableOpacity
+        style={[styles.shareBtn, { backgroundColor: style.accent }]}
+        onPress={handleExportImage}
+        disabled={exporting}
+      >
+        <Text style={styles.shareBtnText}>{exporting ? '生成图片中…' : '🎴 分享海报图片'}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.textShareBtn} onPress={handleShare}>
+        <Text style={styles.backText}>分享文字版</Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
         <Text style={styles.backText}>← 返回档案馆</Text>
@@ -174,6 +211,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   shareBtnText: { fontSize: 16, fontWeight: '700', color: '#FFF' },
+  textShareBtn: { paddingVertical: 10, alignItems: 'center', marginTop: 4 },
   backBtn: { paddingVertical: 14, alignItems: 'center' },
   backText: { fontSize: 14, color: '#BBB' },
 });

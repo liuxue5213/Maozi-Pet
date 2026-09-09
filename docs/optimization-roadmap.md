@@ -2,6 +2,15 @@
 
 > Run 日志（最新在上）
 
+## Run @2026-09-10 ~06:20（第 16/16 轮：海报图片导出，P3 清零）
+- 竞品：稿定/Canva 宠物配图模板逻辑（[稿定](https://www.gaoding.com/templates/xiaohongshu1195)）——社交平台传播标准是**图片直出**而非纯文本
+- 完成：**海报图片导出**（react-native-view-shot 截海报卡片为 PNG + expo-sharing 系统分享面板；Web 降级文本分享；截图失败降级文本；主按钮「🎴 分享海报图片」+ 文字版次按钮）
+- 依赖决策：view-shot/expo-sharing 均为 Expo 官方模块（非重量级），CI prebuild 自动接入，下个 APK 构建生效
+- 测试：双端 typecheck + Web 构建 exit=0（新模块打包无破坏）+ 单测全过 + 海报接口回归（数据链路完好）
+- 遗留：FCM 真机送达配置（P2，需 google-services.json）；至此 P3 清单全部清零或转为配置项
+
+---
+
 ## Run @2026-09-10 05:15-05:30（会话D：第 16 轮 = 习惯打卡系统）
 - **立项依据**：第 15 轮竞品扫描——Finch（D1 60%）/ OtterLife（年百万用户）/ BitePal（月流水 $176 万）三家共同验证「现实习惯→宠物成长绑定」是最大未覆盖差距；此前每日任务全是 App 内动作，本轮把留存钩升级为「你和宠物互相成就」
 - **后端**：user_habits / habit_checkins 两表（UNIQUE(habit_id, checkin_date) 主键天然防并发重复打卡；软删除 archived 保留 streak 历史）；utils/habits.ts 纯函数 calcStreak（Set 去重/今天未打但昨天连着不误报断签/跨月跨年）+ MAX_HABITS=3 / CHECK_MOOD=5 / CHECK_COINS=2；routes/habits.ts 四接口（GET 列表含 streak、POST 创建上限 3、POST /:id/check 打卡、DELETE 软删）
