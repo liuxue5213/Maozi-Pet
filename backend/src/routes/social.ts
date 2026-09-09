@@ -419,6 +419,19 @@ socialRouter.get('/friends/:friendId/visit', authMiddleware, (req: Request, res:
     WHERE user_id = ? AND is_retired = 0
   `).all(friendId) as any[];
 
+  // 我今天对这些宠物已用过的互动类型（前端据此置灰按钮）
+  const today = new Date().toISOString().slice(0, 10);
+  const visited = db.prepare(`
+    SELECT pet_id, type FROM friend_visit_interactions
+    WHERE visitor_id = ? AND owner_id = ? AND visit_date = ?
+  `).all(userId, friendId, today) as any[];
+  const interactionsByPet: Record<string, { liked: boolean; gifted: boolean }> = {};
+  visited.forEach(v => {
+    const entry = interactionsByPet[v.pet_id] || (interactionsByPet[v.pet_id] = { liked: false, gifted: false });
+    if (v.type === 'like') entry.liked = true;
+    if (v.type === 'gift') entry.gifted = true;
+  });
+
   res.json({
     friend: {
       id: friend.id,
@@ -439,7 +452,93 @@ socialRouter.get('/friends/:friendId/visit', authMiddleware, (req: Request, res:
         health: p.stats_health,
       },
     })),
+    todayInteractions: interactionsByPet,
     canInteract: true, // 可以投喂小礼物等
+  });
+});
+
+// 串门互动：👍点赞（免费，好友宠物+心情）/ 🎁送礼（花自己 20 金币，好友宠物+饥饿+心情）
+const GIFT_COST = 20;
+const VISIT_EFFECTS: Record<string, { mood: number; hunger: number }> = {
+  like: { mood: 3, hunger: 0 },
+  gift: { mood: 5, hunger: 15 },
+};
+
+socialRouter.post('/friends/:friendId/pets/:petId/interact', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const friendId = req.params.friendId;
+  const petId = req.params.petId;
+  const { type } = req.body;
+
+  if (!type || !VISIT_EFFECTS[type]) {
+    res.status(400).json({ error: '无效的互动类型' });
+    return;
+  }
+
+  // 验证好友关系
+  const friendship = db.prepare('SELECT 1 FROM friendships WHERE user_id = ? AND friend_id = ?').get(userId, friendId);
+  if (!friendship) {
+    res.status(403).json({ error: '只能和好友的宠物互动' });
+    return;
+  }
+
+  // 验证宠物属于好友且在养
+  const pet = db.prepare('SELECT id, name, is_retired FROM pets WHERE id = ? AND user_id = ?').get(petId, friendId) as any;
+  if (!pet || pet.is_retired) {
+    res.status(404).json({ error: '好友没有这只宠物' });
+    return;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const effects = VISIT_EFFECTS[type];
+  let myCoins = 0;
+
+  try {
+    transaction((tx) => {
+      // 每天每宠物每类型限一次（唯一约束兜底并发）
+      const already = tx.prepare(`
+        SELECT 1 FROM friend_visit_interactions
+        WHERE visitor_id = ? AND pet_id = ? AND type = ? AND visit_date = ?
+      `).get(userId, petId, type, today);
+      if (already) throw new Error('今天已经互动过啦，明天再来吧');
+
+      // 送礼需要扣自己的金币
+      if (type === 'gift') {
+        const me = tx.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any;
+        if (!me || me.coins < GIFT_COST) throw new Error(`金币不足，送礼需要 🪙 ${GIFT_COST}`);
+        tx.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(GIFT_COST, userId);
+      }
+
+      tx.prepare(`
+        INSERT INTO friend_visit_interactions (visitor_id, owner_id, pet_id, type, visit_date, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(userId, friendId, petId, type, today, new Date().toISOString());
+
+      // 好友宠物属性加成（上限 100）
+      tx.prepare(`
+        UPDATE pets SET
+          stats_mood = MIN(100, stats_mood + ?),
+          stats_hunger = MIN(100, stats_hunger + ?)
+        WHERE id = ?
+      `).run(effects.mood, effects.hunger, petId);
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || '互动失败' });
+    return;
+  }
+
+  const updated = db.prepare(`
+    SELECT stats_hunger, stats_mood FROM pets WHERE id = ?
+  `).get(petId) as any;
+  myCoins = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any)?.coins ?? 0;
+
+  res.json({
+    message: type === 'gift'
+      ? `🎁 送出了一罐小鱼干，${pet.name}吃得好开心！`
+      : `👍 夸了夸 ${pet.name}，它开心地蹭了蹭你`,
+    pet: { id: petId, stats: { hunger: updated.stats_hunger, mood: updated.stats_mood } },
+    myCoins,
+    used: true,
   });
 });
 

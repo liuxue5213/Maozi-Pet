@@ -46,6 +46,18 @@ export interface FriendPet {
   stats: { hunger: number; cleanliness: number; mood: number; energy: number; health: number };
 }
 
+/** 我今天对好友某只宠物已用过的互动（前端据此置灰按钮） */
+export interface VisitInteractions {
+  liked: boolean;
+  gifted: boolean;
+}
+
+export interface VisitInteractResult {
+  message: string;
+  pet: { id: string; stats: { hunger: number; mood: number } };
+  myCoins: number;
+}
+
 // ============================================================
 // Store
 // ============================================================
@@ -64,7 +76,7 @@ interface SocialState {
   // 好友
   friends: Friend[];
   searchResults: Friend[];
-  visitFriend: { friend: any; pets: FriendPet[] } | null;
+  visitFriend: { friend: any; pets: FriendPet[]; todayInteractions?: Record<string, VisitInteractions> } | null;
 
   // 错误状态
   error: string | null;
@@ -82,6 +94,7 @@ interface SocialState {
   addFriend: (friendId: string) => Promise<void>;
   fetchFriends: () => Promise<void>;
   visitFriendHome: (friendId: string) => Promise<void>;
+  interactFriendPet: (friendId: string, petId: string, type: 'like' | 'gift') => Promise<VisitInteractResult>;
   clearVisit: () => void;
 }
 
@@ -246,13 +259,46 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   visitFriendHome: async (friendId: string) => {
     set({ error: null });
     try {
-      const result = await apiFetch<{ friend: any; pets: FriendPet[]; canInteract: boolean }>(
-        `/social/friends/${friendId}/visit`
-      );
-      set({ visitFriend: { friend: result.friend, pets: result.pets } });
+      const result = await apiFetch<{
+        friend: any;
+        pets: FriendPet[];
+        todayInteractions?: Record<string, VisitInteractions>;
+      }>(`/social/friends/${friendId}/visit`);
+      set({ visitFriend: { friend: result.friend, pets: result.pets, todayInteractions: result.todayInteractions || {} } });
     } catch (err: any) {
       set({ error: err.message });
     }
+  },
+
+  interactFriendPet: async (friendId: string, petId: string, type: 'like' | 'gift') => {
+    const result = await apiFetch<VisitInteractResult>(
+      `/social/friends/${friendId}/pets/${petId}/interact`,
+      { method: 'POST', body: JSON.stringify({ type }) },
+    );
+
+    // 本地同步：宠物属性 + 今日互动标记
+    set(state => {
+      if (!state.visitFriend) return state;
+      return {
+        visitFriend: {
+          ...state.visitFriend,
+          pets: state.visitFriend.pets.map(p =>
+            p.id === petId
+              ? { ...p, stats: { ...p.stats, hunger: result.pet.stats.hunger, mood: result.pet.stats.mood } }
+              : p
+          ),
+          todayInteractions: {
+            ...state.visitFriend.todayInteractions,
+            [petId]: {
+              liked: (state.visitFriend.todayInteractions?.[petId]?.liked || false) || type === 'like',
+              gifted: (state.visitFriend.todayInteractions?.[petId]?.gifted || false) || type === 'gift',
+            },
+          },
+        },
+      };
+    });
+
+    return result;
   },
 
   clearVisit: () => set({ visitFriend: null }),

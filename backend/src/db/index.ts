@@ -307,6 +307,29 @@ db.exec(`
     claimed INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, task_date, task_id)
   );
+
+  -- 猜拳每日统计（局数上限 + 胜次，按自然日刷新）
+  CREATE TABLE IF NOT EXISTS rps_daily (
+    user_id TEXT NOT NULL,
+    game_date TEXT NOT NULL,
+    play_count INTEGER NOT NULL DEFAULT 0,
+    win_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, game_date)
+  );
+
+  -- 好友串门互动记录（每天每宠物每类型限一次，防刷属性）
+  CREATE TABLE IF NOT EXISTS friend_visit_interactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    visitor_id TEXT NOT NULL,
+    owner_id TEXT NOT NULL,
+    pet_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    visit_date TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (visitor_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(visitor_id, pet_id, type, visit_date)
+  );
+  CREATE INDEX IF NOT EXISTS idx_visit_interactions_owner ON friend_visit_interactions(owner_id, visit_date);
 `);
 
 // ============================================================

@@ -8,6 +8,11 @@ import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 import { todayStr } from '../utils/today';
 import { bumpTaskProgress } from '../utils/tasks';
+import {
+  isRpsChoice, randomChoice, resolveRps, getRpsMessage,
+  RPS_MAX_PLAYS_PER_DAY, RPS_REWARDS, RPS_ENERGY_COST,
+  RpsResult,
+} from '../utils/rps';
 
 export const petRouter = Router();
 
@@ -410,6 +415,118 @@ petRouter.post('/:petId/interact', authMiddleware, (req: Request, res: Response)
   const userCoins = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any)?.coins || 0;
 
   res.json({ pet, message, coinReward, totalCoins: userCoins });
+});
+
+// 猜拳小游戏：赢+金币+心情 / 输仍+心情（低压力，不做惩罚）
+petRouter.post('/:petId/rps', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { petId } = req.params;
+  const { choice } = req.body;
+
+  if (!isRpsChoice(choice)) {
+    res.status(400).json({ error: '无效的出拳，请出 ✊✋✌ 之一' });
+    return;
+  }
+
+  const row = db.prepare('SELECT * FROM pets WHERE id = ? AND user_id = ?').get(petId, userId) as PetRow | undefined;
+  if (!row) {
+    res.status(404).json({ error: '宠物不存在' });
+    return;
+  }
+  if (row.is_retired) {
+    res.status(400).json({ error: '退休的帽子要安心养老啦' });
+    return;
+  }
+  if (row.stage === 'egg') {
+    res.status(400).json({ error: '蛋蛋还不会猜拳，先孵化吧~' });
+    return;
+  }
+
+  const today = todayStr();
+
+  // 每日局数上限（含 0 时不允许继续）
+  const dailyRow = db.prepare('SELECT play_count FROM rps_daily WHERE user_id = ? AND game_date = ?').get(userId, today) as any;
+  if ((dailyRow?.play_count || 0) >= RPS_MAX_PLAYS_PER_DAY) {
+    res.status(400).json({ error: `帽子今天玩累了，明天再来陪它猜拳吧（每日 ${RPS_MAX_PLAYS_PER_DAY} 局）` });
+    return;
+  }
+
+  let pet = applyOfflineDecay(rowToPet(row));
+  const petChoice = randomChoice();
+  const result = resolveRps(choice, petChoice);
+  const rewards = RPS_REWARDS[result];
+
+  // 属性结算：心情必得（输了也正向），体力每局消耗
+  const stats = { ...pet.stats };
+  stats.mood = Math.min(100, stats.mood + rewards.mood);
+  stats.energy = Math.max(10, stats.energy - RPS_ENERGY_COST);
+  pet = { ...pet, stats };
+
+  pet.totalInteractions++;
+  const growth = checkGrowth(pet);
+  pet = growth.pet;
+  pet.updatedAt = new Date().toISOString();
+
+  const updates = petToDb(pet);
+  let coinReward = 0;
+  transaction((tx) => {
+    // 金币与日常互动共享每日产出预算（防通胀）
+    const dailyRecord = tx.prepare('SELECT * FROM daily_interactions WHERE user_id = ? AND interaction_date = ?').get(userId, today) as any;
+    const currentCoins = dailyRecord?.coins_earned || 0;
+    if (rewards.coins > 0 && currentCoins < MAX_COINS_PER_DAY) {
+      coinReward = Math.min(rewards.coins, MAX_COINS_PER_DAY - currentCoins);
+    }
+
+    tx.prepare(`
+      UPDATE pets SET
+        stats_hunger = ?, stats_cleanliness = ?, stats_mood = ?,
+        stats_energy = ?, stats_health = ?, level = ?, exp = ?, stage = ?,
+        total_interactions = ?, updated_at = ?
+      WHERE id = ?
+    `).run(updates.stats_hunger, updates.stats_cleanliness, updates.stats_mood,
+           updates.stats_energy, updates.stats_health, pet.level, pet.exp,
+           pet.stage, pet.totalInteractions, pet.updatedAt, petId);
+
+    if (coinReward > 0) {
+      tx.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(coinReward, userId);
+    }
+
+    if (dailyRecord) {
+      tx.prepare('UPDATE daily_interactions SET count = count + 1, coins_earned = coins_earned + ? WHERE id = ?').run(coinReward, dailyRecord.id);
+    } else {
+      tx.prepare('INSERT INTO daily_interactions (user_id, interaction_date, count, coins_earned) VALUES (?, ?, 1, ?)').run(userId, today, coinReward);
+    }
+
+    // 猜拳局数/胜次统计（失败静默：统计缺失不应阻断游戏）
+    try {
+      tx.prepare(`
+        INSERT INTO rps_daily (user_id, game_date, play_count, win_count)
+        VALUES (?, ?, 1, ?)
+        ON CONFLICT(user_id, game_date)
+        DO UPDATE SET play_count = play_count + 1, win_count = win_count + ?
+      `).run(userId, today, result === 'win' ? 1 : 0, result === 'win' ? 1 : 0);
+    } catch { /* 统计失败不影响游戏 */ }
+  });
+
+  let message = getRpsMessage(row.personality, row.name, result as RpsResult, petChoice);
+  if (growth.leveledUp) message += ` ⬆️ 升级到 Lv.${pet.level}！`;
+  if (coinReward > 0) message += ` 🪙+${coinReward}`;
+
+  bumpTaskProgress(userId, 'interact3');
+
+  const userCoins = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any)?.coins || 0;
+  const playCount = ((dailyRow?.play_count || 0) as number) + 1;
+
+  res.json({
+    result,
+    petChoice,
+    pet,
+    message,
+    coinReward,
+    totalCoins: userCoins,
+    playsToday: playCount,
+    playsLeft: RPS_MAX_PLAYS_PER_DAY - playCount,
+  });
 });
 
 // 退休宠物

@@ -14,7 +14,7 @@ import {
   Platform,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { useSocialStore, Friend, FriendPet } from '../../../store/socialStore';
+import { useSocialStore, Friend, FriendPet, VisitInteractions } from '../../../store/socialStore';
 
 // ============================================================
 // 子组件
@@ -39,17 +39,26 @@ function FriendCard({ friend, onVisit }: { friend: Friend; onVisit: () => void }
   );
 }
 
+const GIFT_COST = 20;
+
 function VisitModal({
   visible,
   onClose,
   friend,
   pets,
+  todayInteractions,
+  onInteract,
 }: {
   visible: boolean;
   onClose: () => void;
   friend: any;
   pets: FriendPet[];
+  todayInteractions: Record<string, VisitInteractions>;
+  onInteract: (petId: string, type: 'like' | 'gift') => Promise<string | null>;
 }) {
+  const [busyPetId, setBusyPetId] = useState<string | null>(null);
+  const [tip, setTip] = useState('');
+
   if (!friend) return null;
 
   const stageLabel = (stage: string) => {
@@ -57,6 +66,16 @@ function VisitModal({
     if (stage === 'child') return '幼体';
     if (stage === 'teen') return '少年';
     return '成年';
+  };
+
+  const handleInteract = async (petId: string, type: 'like' | 'gift') => {
+    setBusyPetId(petId);
+    const message = await onInteract(petId, type);
+    setBusyPetId(null);
+    if (message) {
+      setTip(message);
+      setTimeout(() => setTip(''), 3000);
+    }
   };
 
   return (
@@ -99,23 +118,40 @@ function VisitModal({
             ))
           )}
 
-          {/* 互动区（轻量） */}
+          {/* 互动区（点赞免费 / 送礼花自己金币帮好友宠物加属性） */}
           <View style={styles.interactBox}>
             <Text style={styles.interactTitle}>互动</Text>
-            <View style={styles.interactBtns}>
-              <TouchableOpacity style={styles.interactBtn}>
-                <Text style={styles.interactBtnIcon}>🎁</Text>
-                <Text style={styles.interactBtnLabel}>送小礼物</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.interactBtn}>
-                <Text style={styles.interactBtnIcon}>👍</Text>
-                <Text style={styles.interactBtnLabel}>点赞</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.interactBtn}>
-                <Text style={styles.interactBtnIcon}>💌</Text>
-                <Text style={styles.interactBtnLabel}>留言</Text>
-              </TouchableOpacity>
-            </View>
+            {tip.length > 0 && <Text style={styles.interactTip}>{tip}</Text>}
+            {pets.map(pet => {
+              const used = todayInteractions[pet.id] || { liked: false, gifted: false };
+              return (
+                <View key={pet.id} style={styles.interactPetRow}>
+                  <Text style={styles.interactPetName}>{pet.name}</Text>
+                  <View style={styles.interactBtns}>
+                    <TouchableOpacity
+                      style={styles.interactBtn}
+                      disabled={used.liked || busyPetId === pet.id}
+                      onPress={() => handleInteract(pet.id, 'like')}
+                    >
+                      <Text style={styles.interactBtnIcon}>{used.liked ? '💕' : '👍'}</Text>
+                      <Text style={[styles.interactBtnLabel, used.liked && styles.interactBtnLabelDone]}>
+                        {used.liked ? '已夸过' : '点赞'}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.interactBtn}
+                      disabled={used.gifted || busyPetId === pet.id}
+                      onPress={() => handleInteract(pet.id, 'gift')}
+                    >
+                      <Text style={styles.interactBtnIcon}>{used.gifted ? '🎁' : '🐟'}</Text>
+                      <Text style={[styles.interactBtnLabel, used.gifted && styles.interactBtnLabelDone]}>
+                        {used.gifted ? '已送过' : `送礼 🪙${GIFT_COST}`}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
           </View>
         </ScrollView>
       </View>
@@ -141,11 +177,12 @@ function MiniStat({ label, value, color }: { label: string; value: number; color
 export default function FriendsScreen() {
   const {
     friends, searchResults, visitFriend,
-    searchUsers, addFriend, fetchFriends, visitFriendHome, clearVisit,
+    searchUsers, addFriend, fetchFriends, visitFriendHome, interactFriendPet, clearVisit,
   } = useSocialStore();
 
   const [searchText, setSearchText] = useState('');
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
+  const [coinsNote, setCoinsNote] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -161,6 +198,18 @@ export default function FriendsScreen() {
   const handleVisit = async (friend: Friend) => {
     setSelectedFriend(friend);
     await visitFriendHome(friend.id);
+  };
+
+  // 串门互动：成功返回提示文案；金币变动同步提示
+  const handleInteract = async (petId: string, type: 'like' | 'gift'): Promise<string | null> => {
+    if (!selectedFriend) return null;
+    try {
+      const result = await interactFriendPet(selectedFriend.id, petId, type);
+      if (type === 'gift') setCoinsNote(`🪙 ${result.myCoins}`);
+      return result.message;
+    } catch (err: any) {
+      return err.message || '互动失败';
+    }
   };
 
   return (
@@ -210,7 +259,10 @@ export default function FriendsScreen() {
 
         {/* 好友列表 */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>我的好友 ({friends.length})</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>我的好友 ({friends.length})</Text>
+            {coinsNote.length > 0 && <Text style={styles.coinsNote}>{coinsNote}</Text>}
+          </View>
           {friends.length === 0 ? (
             <View style={styles.emptyFriends}>
               <Text style={styles.emptyEmoji}>👥</Text>
@@ -228,9 +280,11 @@ export default function FriendsScreen() {
       {/* 串门弹窗 */}
       <VisitModal
         visible={!!selectedFriend}
-        onClose={() => { setSelectedFriend(null); clearVisit(); }}
+        onClose={() => { setSelectedFriend(null); clearVisit(); setCoinsNote(''); }}
         friend={selectedFriend}
         pets={visitFriend?.pets || []}
+        todayInteractions={visitFriend?.todayInteractions || {}}
+        onInteract={handleInteract}
       />
     </View>
   );
@@ -359,8 +413,14 @@ const styles = StyleSheet.create({
   emptyPetsText: { fontSize: 14, color: '#999' },
   interactBox: { marginTop: 20, backgroundColor: '#FFF', padding: 16, borderRadius: 14 },
   interactTitle: { fontSize: 14, fontWeight: '600', color: '#5A4A4A', marginBottom: 12 },
-  interactBtns: { flexDirection: 'row', justifyContent: 'space-around' },
+  interactTip: { fontSize: 12, color: '#5A7A6A', marginBottom: 10, backgroundColor: '#E8F8F5', padding: 8, borderRadius: 8 },
+  interactPetRow: { marginBottom: 12 },
+  interactPetName: { fontSize: 13, color: '#999', marginBottom: 6 },
+  interactBtns: { flexDirection: 'row', gap: 24 },
   interactBtn: { alignItems: 'center', padding: 8 },
   interactBtnIcon: { fontSize: 24 },
   interactBtnLabel: { fontSize: 11, color: '#777', marginTop: 4 },
+  interactBtnLabelDone: { color: '#BBB' },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, paddingHorizontal: 4 },
+  coinsNote: { fontSize: 13, color: '#FF9F43', fontWeight: '600' },
 });

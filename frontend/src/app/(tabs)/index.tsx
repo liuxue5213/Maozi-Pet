@@ -14,6 +14,7 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { usePetStore, INTERACTION_LABELS } from '../../store/petStore';
@@ -26,6 +27,27 @@ const { width } = Dimensions.get('window');
 // 与后端 pet.ts 的升级曲线保持一致：每级需要 level * 20 经验
 function expToNextLevel(level: number): number {
   return level * 20;
+}
+
+// 猜拳选项（与后端 rps.ts 对齐）
+const RPS_HANDS = [
+  { choice: 'rock', emoji: '✊', label: '石头' },
+  { choice: 'paper', emoji: '✋', label: '布' },
+  { choice: 'scissors', emoji: '✌️', label: '剪刀' },
+] as const;
+const RPS_EMOJI: Record<string, string> = { rock: '✊', paper: '✋', scissors: '✌️' };
+const RPS_RESULT_TEXT: Record<string, { text: string; color: string }> = {
+  win: { text: '🏆 你赢了！', color: '#5A7A6A' },
+  lose: { text: '😹 帽子赢了', color: '#FF9F43' },
+  draw: { text: '🤝 平局', color: '#54A0FF' },
+};
+
+interface RpsRound {
+  result: 'win' | 'lose' | 'draw';
+  petChoice: string;
+  message: string;
+  coinReward: number;
+  playsLeft: number;
 }
 
 interface DailyTask {
@@ -124,6 +146,107 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
   );
 }
 
+// 猜拳小游戏弹窗（赢+金币+心情，输也+心情：低压力，不惩罚）
+function RpsModal({
+  visible,
+  onClose,
+  petName,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  petName: string;
+}) {
+  const [playing, setPlaying] = useState(false);
+  const [round, setRound] = useState<RpsRound | null>(null);
+  const [myChoice, setMyChoice] = useState<string | null>(null);
+  const [error, setError] = useState('');
+
+  const handlePlay = async (choice: 'rock' | 'paper' | 'scissors') => {
+    setPlaying(true);
+    setError('');
+    try {
+      const result = await apiFetch<RpsRound & { pet: any; totalCoins: number }>(
+        `/pet/${usePetStore.getState().pet?.id}/rps`,
+        { method: 'POST', body: JSON.stringify({ choice }) },
+      );
+      setRound(result);
+      setMyChoice(choice);
+      usePetStore.getState().updateCoins(result.totalCoins);
+      await usePetStore.getState().fetchPet();
+    } catch (err: any) {
+      setError(err.message || '出错了，再试一次喵');
+    } finally {
+      setPlaying(false);
+    }
+  };
+
+  const handleClose = () => {
+    setRound(null);
+    setMyChoice(null);
+    setError('');
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+      <View style={styles.rpsContainer}>
+        <View style={styles.rpsHeader}>
+          <Text style={styles.rpsTitle}>🎮 和{petName}猜拳</Text>
+          <TouchableOpacity onPress={handleClose}>
+            <Text style={styles.rpsClose}>✕</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.rpsArena}>
+          {/* 帽子的出拳 */}
+          <View style={styles.rpsHandBox}>
+            <Text style={styles.rpsHand}>{round ? RPS_EMOJI[round.petChoice] : '🐱'}</Text>
+            <Text style={styles.rpsHandLabel}>{petName}</Text>
+          </View>
+
+          <Text style={styles.rpsVs}>VS</Text>
+
+          {/* 我的出拳 */}
+          <View style={styles.rpsHandBox}>
+            <Text style={styles.rpsHand}>{myChoice ? RPS_EMOJI[myChoice] : '🙋'}</Text>
+            <Text style={styles.rpsHandLabel}>你</Text>
+          </View>
+        </View>
+
+        {/* 结果 */}
+        {round && (
+          <View style={styles.rpsResultBox}>
+            <Text style={[styles.rpsResultText, { color: RPS_RESULT_TEXT[round.result].color }]}>
+              {RPS_RESULT_TEXT[round.result].text}
+            </Text>
+            <Text style={styles.rpsMessage}>{round.message}</Text>
+            {round.playsLeft <= 3 && <Text style={styles.rpsPlaysLeft}>今日还能玩 {round.playsLeft} 局</Text>}
+          </View>
+        )}
+        {error.length > 0 && <Text style={styles.rpsError}>{error}</Text>}
+
+        {/* 出拳按钮 */}
+        <View style={styles.rpsChoices}>
+          {RPS_HANDS.map(h => (
+            <TouchableOpacity
+              key={h.choice}
+              style={styles.rpsChoiceBtn}
+              disabled={playing}
+              onPress={() => handlePlay(h.choice)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.rpsChoiceEmoji}>{h.emoji}</Text>
+              <Text style={styles.rpsChoiceLabel}>{h.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={styles.rpsRule}>赢 +🪙10 ⬆️心情 · 输也 +心情（不惩罚）· 每日 20 局</Text>
+      </View>
+    </Modal>
+  );
+}
+
 // ============================================================
 // 主页面
 // ============================================================
@@ -140,6 +263,7 @@ export default function HomeScreen() {
 
   const [interactMessage, setInteractMessage] = useState('');
   const [tasks, setTasks] = useState<DailyTask[]>([]);
+  const [rpsVisible, setRpsVisible] = useState(false);
   const eventAttempted = useRef(false); // 每次进入 app 只尝试拉取一次随机事件
 
   // 每日任务：拉取 + 领取（金币即时同步到全局用户状态）
@@ -286,7 +410,21 @@ export default function HomeScreen() {
         <InteractionButton action="play" icon="🎾" onPress={() => handleInteract('play')} />
         <InteractionButton action="comfort" icon="💕" onPress={() => handleInteract('comfort')} />
         <InteractionButton action="pet" icon="✋" onPress={() => handleInteract('pet')} />
+        {/* 蛋阶段不会猜拳，成年玩法 */}
+        {pet.stage !== 'egg' && (
+          <TouchableOpacity style={styles.actionBtn} onPress={() => setRpsVisible(true)} activeOpacity={0.7}>
+            <Text style={styles.actionIcon}>🎮</Text>
+            <Text style={styles.actionLabel}>猜拳</Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      {/* 猜拳小游戏 */}
+      <RpsModal
+        visible={rpsVisible}
+        onClose={() => setRpsVisible(false)}
+        petName={pet.name}
+      />
 
       {/* 每日任务 */}
       {tasks.length > 0 && (
@@ -505,4 +643,66 @@ const styles = StyleSheet.create({
   primaryBtnText: { fontSize: 16, fontWeight: '600', color: '#FFF' },
   archiveLink: { marginTop: 20, paddingVertical: 6 },
   archiveLinkText: { fontSize: 13, color: '#BBB' },
+
+  // 猜拳小游戏弹窗
+  rpsContainer: { flex: 1, backgroundColor: '#FFF5F7', alignItems: 'center' },
+  rpsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    padding: 16,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  rpsTitle: { fontSize: 16, fontWeight: '600', color: '#5A4A4A' },
+  rpsClose: { fontSize: 18, color: '#999' },
+  rpsArena: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 28,
+    marginTop: 48,
+    marginBottom: 24,
+  },
+  rpsHandBox: { alignItems: 'center' },
+  rpsHand: { fontSize: 64 },
+  rpsHandLabel: { fontSize: 13, color: '#999', marginTop: 6 },
+  rpsVs: { fontSize: 20, fontWeight: '700', color: '#FF9F43' },
+  rpsResultBox: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 20,
+    minHeight: 90,
+    justifyContent: 'center',
+    width: '86%',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8 },
+      android: { elevation: 3 },
+    }),
+  },
+  rpsResultText: { fontSize: 17, fontWeight: '700', marginBottom: 6 },
+  rpsMessage: { fontSize: 14, color: '#5A4A4A', textAlign: 'center' },
+  rpsPlaysLeft: { fontSize: 11, color: '#BBB', marginTop: 6 },
+  rpsError: { fontSize: 13, color: '#C0392B', marginBottom: 16 },
+  rpsChoices: { flexDirection: 'row', gap: 18 },
+  rpsChoiceBtn: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: '#FFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6 },
+      android: { elevation: 4 },
+    }),
+  },
+  rpsChoiceEmoji: { fontSize: 34 },
+  rpsChoiceLabel: { fontSize: 12, color: '#777', marginTop: 2 },
+  rpsRule: { fontSize: 11, color: '#BBB', marginTop: 24, textAlign: 'center', paddingHorizontal: 24 },
 });
