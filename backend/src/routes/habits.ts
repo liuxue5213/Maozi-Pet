@@ -52,6 +52,12 @@ habitsRouter.get('/', authMiddleware, (req: Request, res: Response) => {
       streak: frozen.streak,
       checkedToday: days.includes(today),
       totalCheckins: days.length,
+      // 最近 30 天打卡日期（前端热力条）
+      recentDates: [...new Set(days.filter(d => {
+        const [y, m, dd] = d.split('-').map(Number);
+        const t = new Date(y, m - 1, dd).getTime();
+        return t >= Date.now() - 30 * 86400000 && t <= Date.now() + 86400000;
+      }))].sort(),
       freezes: Math.max(0, Math.min(MAX_FREEZES, h.freezes)),
       // 濒断但有券：预览口径已把昨天桥接进来（未消费），前端可提示「冻结券保护中」
       freezeProtected: frozen.newFrozenDays.length > 0,

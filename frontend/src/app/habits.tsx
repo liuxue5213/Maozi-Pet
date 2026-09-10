@@ -28,6 +28,7 @@ interface Habit {
   freezeProtected: boolean;
   nextMilestoneDays: number | null;
   nextMilestoneExp: number | null;
+  recentDates: string[];
 }
 
 interface CheckResult {
@@ -188,6 +189,14 @@ export default function HabitsScreen() {
                       🎯 再坚持 {habit.nextMilestoneDays - habit.streak} 天得里程碑（宠物经验+{habit.nextMilestoneExp}）
                     </Text>
                   )}
+                  {/* 最近 30 天热力条：有打卡的日期点亮 */}
+                  <View style={styles.heatRow}>
+                    {Array.from({ length: 30 }, (_, i) => {
+                      const d = new Date(Date.now() - (29 - i) * 86400000);
+                      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                      return <View key={key} style={[styles.heatCell, habit.recentDates.includes(key) && styles.heatCellOn]} />;
+                    })}
+                  </View>
                 </View>
               </View>
               <View style={styles.habitActions}>
@@ -288,6 +297,9 @@ const styles = StyleSheet.create({
   habitName: { fontSize: 15, fontWeight: '700', color: '#5A4A4A' },
   habitMeta: { fontSize: 12, color: '#A89888', marginTop: 3 },
   habitMilestone: { fontSize: 11, color: '#7A9A6A', marginTop: 2, fontWeight: '600' },
+  heatRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 2, marginTop: 5 },
+  heatCell: { width: 8, height: 8, borderRadius: 2, backgroundColor: '#F0EAE0' },
+  heatCellOn: { backgroundColor: '#7A9A6A' },
   habitActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   checkBtn: {
     backgroundColor: '#E8A87C',
