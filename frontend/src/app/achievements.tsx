@@ -22,11 +22,14 @@ interface Achievement {
   icon: string;
   unlocked: boolean;
   unlockedAt: string | null;
+  threshold: number;
+  metric: string;
 }
 
 export default function AchievementsScreen() {
   const [achievements, setAchievements] = useState<Achievement[] | null>(null);
   const [unlockedCount, setUnlockedCount] = useState(0);
+  const [metrics, setMetrics] = useState<Record<string, number>>({});
   const [totalCount, setTotalCount] = useState(0);
   // 本次进入页面新解锁的徽章数与钻石奖励（成就 → 钻石 → 限定颜值 的经济闭环）
   const [reward, setReward] = useState<{ newCount: number; diamonds: number } | null>(null);
@@ -44,6 +47,7 @@ export default function AchievementsScreen() {
           }>('/achievements');
           setAchievements(result.achievements);
           setUnlockedCount(result.unlockedCount);
+          setMetrics(result.metrics || {});
           setTotalCount(result.totalCount);
           setReward(result.newCount > 0 ? { newCount: result.newCount, diamonds: result.diamondsEarned } : null);
         } catch {
@@ -79,6 +83,16 @@ export default function AchievementsScreen() {
               <Text style={[styles.badgeIcon, !a.unlocked && styles.badgeIconLocked]}>{a.icon}</Text>
               <Text style={[styles.badgeTitle, !a.unlocked && styles.badgeTitleLocked]}>{a.title}</Text>
               <Text style={styles.badgeDesc}>{a.unlocked ? a.description : '？？？'}</Text>
+              {!a.unlocked && (
+                <View style={styles.badgeProgressWrap}>
+                  <View style={styles.badgeProgressBg}>
+                    <View style={[styles.badgeProgressFill, { width: `${Math.min(100, Math.round(((metrics[a.metric] || 0) / a.threshold) * 100))}%` }]} />
+                  </View>
+                  <Text style={styles.badgeProgressText}>
+                    {metrics[a.metric] || 0}/{a.threshold}
+                  </Text>
+                </View>
+              )}
               <Text style={styles.badgeDate}>
                 {a.unlocked && a.unlockedAt ? new Date(a.unlockedAt).toLocaleDateString('zh-CN') : '未解锁'}
               </Text>
@@ -95,6 +109,10 @@ export default function AchievementsScreen() {
 }
 
 const styles = StyleSheet.create({
+  badgeProgressWrap: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+  badgeProgressBg: { flex: 1, height: 5, borderRadius: 3, backgroundColor: '#EFE8DE', overflow: 'hidden' },
+  badgeProgressFill: { height: '100%', borderRadius: 3, backgroundColor: '#D9B88F' },
+  badgeProgressText: { fontSize: 10, color: '#B0A090', minWidth: 34, textAlign: 'right' },
   container: { flex: 1, backgroundColor: '#FFF5F7' },
   content: { padding: 20, paddingBottom: 40 },
   header: { alignItems: 'center', marginVertical: 20 },
