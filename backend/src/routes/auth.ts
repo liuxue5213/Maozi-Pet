@@ -6,8 +6,11 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import db from '../db';
+import db, { transaction } from '../db';
 import { generateToken, authMiddleware, getCurrentUserId, JWT_SECRET } from '../middleware/auth';
+import { filenameFromPostImageUrl } from '../utils/upload';
+import path from 'path';
+import fs from 'fs';
 
 export const authRouter = Router();
 
@@ -53,6 +56,56 @@ function validateNickname(nickname: string): boolean {
 function normalizeEmail(email: string): string {
   return String(email || '').trim().toLowerCase();
 }
+
+// ============================================================
+// 账号注销（个保法合规：用户有权删除全部数据）
+// 大部分表对 users 外联 ON DELETE CASCADE；无级联的统计表与社区孤儿数据在此显式清理
+// ============================================================
+const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads');
+const NO_CASCADE_USER_TABLES = [
+  'task_progress', 'rps_daily', 'user_achievements',
+  'guess_daily', 'memory_daily', 'mole_daily', 'habit_checkins',
+];
+
+authRouter.delete('/account', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
+  if (!user) {
+    res.status(404).json({ error: '账号不存在' });
+    return;
+  }
+
+  // 收集帖子配图（删库后文件 best-effort 清理）
+  const imageUrls = (db.prepare('SELECT image_url FROM posts WHERE user_id = ? AND image_url IS NOT NULL')
+    .all(userId) as any[]).map(r => r.image_url as string);
+
+  transaction(() => {
+    // 社区孤儿数据：自己帖子的点赞/评论（帖子和其余 user 数据由 CASCADE 统一带走）
+    const postIds = db.prepare('SELECT id FROM posts WHERE user_id = ?').all(userId) as any[];
+    for (const p of postIds) {
+      db.prepare('DELETE FROM post_likes WHERE post_id = ?').run(p.id);
+      db.prepare('DELETE FROM post_comments WHERE post_id = ?').run(p.id);
+    }
+    // 推送记录按宠物 id 关联（pets 级联后会成为无主行）
+    db.prepare('DELETE FROM push_sent WHERE pet_id IN (SELECT id FROM pets WHERE user_id = ?)').run(userId);
+    // 无级联外键的统计/记录表
+    for (const t of NO_CASCADE_USER_TABLES) {
+      db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(userId);
+    }
+    // 主记录：级联带走 pets/friends/posts/chat/memories/tokens 等全部数据
+    db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  });
+
+  // 配图文件清理（失败不影响注销结果）
+  for (const url of imageUrls) {
+    const filename = filenameFromPostImageUrl(url);
+    if (filename) {
+      try { fs.unlinkSync(path.join(UPLOAD_DIR, filename)); } catch { /* 已不存在则忽略 */ }
+    }
+  }
+
+  res.json({ message: '账号已注销，所有数据已删除。感谢陪伴，再见 🌈' });
+});
 
 // ============================================================
 // 游客快速开始

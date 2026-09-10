@@ -133,6 +133,35 @@ export default function ProfileScreen() {
     router.replace('/login');
   };
 
+  // 注销账号：两层确认（不可逆 + 数据全删），成功后清本地凭证回登录页
+  const handleDeleteAccount = () => {
+    Alert.alert('注销账号？', '宠物、记忆、好友、帖子等全部数据将被永久删除，无法恢复。', [
+      { text: '再想想', style: 'cancel' },
+      {
+        text: '继续注销',
+        style: 'destructive',
+        onPress: () => {
+          Alert.alert('最后确认', '真的要和帽子说再见吗？此操作不可撤销。', [
+            { text: '取消', style: 'cancel' },
+            {
+              text: '确认注销',
+              style: 'destructive',
+              onPress: async () => {
+                try {
+                  await apiFetch('/auth/account', { method: 'DELETE' });
+                  await clearToken();
+                  router.replace('/login');
+                } catch (err: any) {
+                  Alert.alert('提示', err.message || '注销失败，请重试');
+                }
+              },
+            },
+          ]);
+        },
+      },
+    ]);
+  };
+
   // 切换隐私开关（乐观更新，失败回滚）
   type PrivacyKey = 'showOnSquare' | 'allowStrangerInteract' | 'hidePetInfo';
   const handleTogglePrivacy = async (key: PrivacyKey, value: boolean) => {
@@ -341,6 +370,11 @@ export default function ProfileScreen() {
         <Text style={styles.archiveBtnText}>🏛️ 宠物档案馆</Text>
       </TouchableOpacity>
 
+      {/* 注销账号（合规：数据可删） */}
+      <TouchableOpacity style={styles.deleteAccountBtn} onPress={handleDeleteAccount}>
+        <Text style={styles.deleteAccountText}>注销账号（永久删除全部数据）</Text>
+      </TouchableOpacity>
+
       {/* 退出登录 */}
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <Text style={styles.logoutText}>退出登录</Text>
@@ -542,6 +576,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   upgradeBtnText: { fontSize: 13, fontWeight: '600', color: '#5A7A6A' },
+  deleteAccountBtn: { alignSelf: 'center', marginTop: 18, paddingVertical: 8, paddingHorizontal: 12 },
+  deleteAccountText: { fontSize: 12, color: '#C0C0C0' },
   logoutBtn: {
     marginTop: 20,
     marginHorizontal: 16,
