@@ -24,6 +24,11 @@ import {
   MEMORY_MAX_GAMES_PER_DAY,
 } from '../utils/flip';
 import { applyExp } from '../utils/growth';
+import {
+  isValidMoleHole, newMoleSequence, isMoleHit, moleCoins,
+  getMoleStartMessage, getMoleEndMessage,
+  MOLE_SHOW_MS, MOLE_GRACE_MS, MOLE_MAX_GAMES_PER_DAY, MOLE_ROUNDS,
+} from '../utils/mole';
 
 export const petRouter = Router();
 
@@ -1078,6 +1083,236 @@ petRouter.post('/:petId/memory/flip', authMiddleware, (req: Request, res: Respon
   });
 });
 
+
+// ============================================================
+// 打地鼠（服务端权威：序列与每轮时限全由服务器生成/判定，客户端只上报敲了哪个洞）
+// ============================================================
+
+// 服务端单轮判定窗口（展示 + 延迟宽限）
+const MOLE_WINDOW_MS = MOLE_SHOW_MS + MOLE_GRACE_MS;
+
+// 开局（有进行中的对局则续玩，不重复扣每日局数）
+petRouter.post('/:petId/mole/start', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { petId } = req.params;
+
+  const row = db.prepare('SELECT * FROM pets WHERE id = ? AND user_id = ?').get(petId, userId) as PetRow | undefined;
+  if (!row) {
+    res.status(404).json({ error: '宠物不存在' });
+    return;
+  }
+  if (row.is_retired) {
+    res.status(400).json({ error: '退休的帽子要安心养老啦' });
+    return;
+  }
+  if (row.is_sleeping) {
+    res.status(400).json({ error: `${row.name} 睡着啦，先叫醒它吧 🌙` });
+    return;
+  }
+  if (row.stage === 'egg') {
+    res.status(400).json({ error: '蛋蛋还拿不动锤子，先孵化吧~' });
+    return;
+  }
+
+  const nowIso = new Date().toISOString();
+
+  // 续玩进行中的对局：返回当前轮的洞位与剩余时间
+  const active = db.prepare(
+    "SELECT id, sequence, current_round, hits, round_started_at FROM mole_sessions WHERE user_id = ? AND pet_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1"
+  ).get(userId, petId) as any;
+  if (active) {
+    const seq: number[] = JSON.parse(active.sequence);
+    const elapsed = Math.max(0, Date.now() - Date.parse(active.round_started_at));
+    res.json({
+      sessionId: active.id,
+      round: active.current_round,
+      hole: seq[active.current_round],
+      hits: active.hits,
+      deadlineMs: Math.max(0, MOLE_WINDOW_MS - elapsed),
+      rounds: seq.length,
+      resumed: true,
+      message: '上一局还没打完，继续！',
+    });
+    return;
+  }
+
+  // 每日局数上限（事务内判定 + 写入，防并发刷局）
+  let capped = false;
+  transaction((tx) => {
+    const daily = tx.prepare('SELECT game_count FROM mole_daily WHERE user_id = ? AND game_date = ?').get(userId, todayStr()) as any;
+    if ((daily?.game_count || 0) >= MOLE_MAX_GAMES_PER_DAY) {
+      capped = true;
+      return;
+    }
+    tx.prepare(`
+      INSERT INTO mole_sessions (user_id, pet_id, sequence, current_round, hits, round_started_at, status, created_at, updated_at)
+      VALUES (?, ?, ?, 0, 0, ?, 'active', ?, ?)
+    `).run(userId, petId, JSON.stringify(newMoleSequence()), nowIso, nowIso, nowIso);
+  });
+
+  if (capped) {
+    res.status(400).json({ error: `今天敲够了，明天再来吧（每日 ${MOLE_MAX_GAMES_PER_DAY} 局）` });
+    return;
+  }
+
+  const session = db.prepare(
+    "SELECT id, sequence FROM mole_sessions WHERE user_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1"
+  ).get(userId) as any;
+  const seq: number[] = JSON.parse(session.sequence);
+
+  res.json({
+    sessionId: session.id,
+    round: 0,
+    hole: seq[0],
+    hits: 0,
+    deadlineMs: MOLE_WINDOW_MS,
+    rounds: seq.length,
+    resumed: false,
+    message: getMoleStartMessage(row.name),
+  });
+});
+
+// 敲一锤（错洞/超时也算一轮，不惩罚；每轮 UPDATE 带轮次守卫防连点双计）
+petRouter.post('/:petId/mole/whack', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { petId } = req.params;
+  const { sessionId, hole } = req.body;
+
+  if (!isValidMoleHole(hole)) {
+    res.status(400).json({ error: '要敲 0~8 号洞哦（-1 = 没敲到）' });
+    return;
+  }
+
+  const row = db.prepare('SELECT * FROM pets WHERE id = ? AND user_id = ?').get(petId, userId) as PetRow | undefined;
+  if (!row) {
+    res.status(404).json({ error: '宠物不存在' });
+    return;
+  }
+  if (row.is_retired) {
+    res.status(400).json({ error: '退休的帽子要安心养老啦' });
+    return;
+  }
+  if (row.is_sleeping) {
+    res.status(400).json({ error: `${row.name} 睡着啦，先叫醒它吧 🌙` });
+    return;
+  }
+
+  const session = db.prepare(
+    'SELECT * FROM mole_sessions WHERE id = ? AND user_id = ? AND pet_id = ?'
+  ).get(sessionId, userId, petId) as any;
+  if (!session) {
+    res.status(404).json({ error: '对局不存在，重新开局吧' });
+    return;
+  }
+  if (session.status !== 'active') {
+    res.status(400).json({ error: '这一局已经结束了，开新一局吧' });
+    return;
+  }
+
+  const seq: number[] = JSON.parse(session.sequence);
+  const now = Date.now();
+  const hit = isMoleHit(seq[session.current_round], hole, Date.parse(session.round_started_at), now);
+  const hits = session.hits + (hit ? 1 : 0);
+  const nextRound = session.current_round + 1;
+  const nowIso = new Date(now).toISOString();
+
+  // 轮次进行中：乐观守卫（current_round 未变才写入），并发连点只算一锤
+  if (nextRound < seq.length) {
+    const advance = db.prepare(
+      'UPDATE mole_sessions SET current_round = ?, hits = ?, round_started_at = ?, updated_at = ? WHERE id = ? AND current_round = ? AND status = ?'
+    ).run(nextRound, hits, nowIso, nowIso, session.id, session.current_round, 'active');
+    if (advance.changes === 0) {
+      res.status(400).json({ error: '这一敲没算上，地鼠已经换洞啦' });
+      return;
+    }
+    res.json({
+      result: hit ? 'hit' : 'miss',
+      round: nextRound,
+      hole: seq[nextRound],
+      hits,
+      deadlineMs: MOLE_WINDOW_MS,
+    });
+    return;
+  }
+
+  // 终局结算：+心情/体力/成长 + 金币（共享每日 200 预算），无失败惩罚
+  const pet = rowToPet(row);
+  const stats = { ...pet.stats };
+  stats.mood = Math.min(100, stats.mood + 5);
+  stats.energy = Math.max(10, stats.energy - 3);
+  let petOut = { ...pet, stats, totalInteractions: pet.totalInteractions + 1 };
+  petOut = checkGrowth(petOut).pet;
+  petOut.updatedAt = nowIso;
+
+  const updates = petToDb(petOut);
+  let coinReward = 0;
+  transaction((tx) => {
+    // 终局守卫：状态与轮次都不变才结算（并发第二锤直接拒绝）
+    const settle = tx.prepare(
+      "UPDATE mole_sessions SET status = 'done', hits = ?, updated_at = ? WHERE id = ? AND current_round = ? AND status = 'active'"
+    ).run(hits, nowIso, session.id, session.current_round);
+    if (settle.changes === 0) {
+      coinReward = -1; // 信号：已被并发请求结算
+      return;
+    }
+
+    const dailyRecord = tx.prepare('SELECT coins_earned FROM daily_interactions WHERE user_id = ? AND interaction_date = ?').get(userId, todayStr()) as any;
+    const currentCoins = dailyRecord?.coins_earned || 0;
+    if (currentCoins < MAX_COINS_PER_DAY) {
+      coinReward = Math.min(moleCoins(hits, seq.length), MAX_COINS_PER_DAY - currentCoins);
+    }
+
+    tx.prepare(`
+      UPDATE pets SET
+        stats_hunger = ?, stats_cleanliness = ?, stats_mood = ?,
+        stats_energy = ?, stats_health = ?, level = ?, exp = ?, stage = ?,
+        total_interactions = ?, updated_at = ?
+      WHERE id = ?
+    `).run(updates.stats_hunger, updates.stats_cleanliness, updates.stats_mood,
+           updates.stats_energy, updates.stats_health, petOut.level, petOut.exp,
+           petOut.stage, petOut.totalInteractions, petOut.updatedAt, petId);
+
+    if (coinReward > 0) {
+      tx.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(coinReward, userId);
+      const dailyRow = tx.prepare('SELECT id FROM daily_interactions WHERE user_id = ? AND interaction_date = ?').get(userId, todayStr()) as any;
+      if (dailyRow) {
+        tx.prepare('UPDATE daily_interactions SET coins_earned = coins_earned + ? WHERE id = ?').run(coinReward, dailyRow.id);
+      } else {
+        tx.prepare('INSERT INTO daily_interactions (user_id, interaction_date, count, coins_earned) VALUES (?, ?, 0, ?)').run(userId, todayStr(), coinReward);
+      }
+    }
+
+    tx.prepare(`
+      INSERT INTO mole_daily (user_id, game_date, game_count, hit_total)
+      VALUES (?, ?, 1, ?)
+      ON CONFLICT(user_id, game_date)
+      DO UPDATE SET game_count = game_count + 1, hit_total = hit_total + ?
+    `).run(userId, todayStr(), hits, hits);
+  });
+
+  if (coinReward === -1) {
+    res.status(400).json({ error: '这一敲没算上，对局刚被结算啦' });
+    return;
+  }
+
+  bumpTaskProgress(userId, 'interact3');
+
+  let message = getMoleEndMessage(row.name, hits, seq.length);
+  if (petOut.level > pet.level) message += ` ⬆️ 升级到 Lv.${petOut.level}！`;
+  if (coinReward > 0) message += ` 🪙+${coinReward}`;
+  const userCoins = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any)?.coins || 0;
+
+  res.json({
+    result: 'finished',
+    hits,
+    rounds: seq.length,
+    coinReward,
+    totalCoins: userCoins,
+    pet: petOut,
+    message,
+  });
+});
+
 // 退休宠物
 petRouter.post('/:petId/retire', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
@@ -1097,6 +1332,7 @@ petRouter.post('/:petId/retire', authMiddleware, (req: Request, res: Response) =
   db.prepare('UPDATE pets SET is_retired = 1, is_sleeping = 0, sleep_started_at = NULL, updated_at = ? WHERE id = ?').run(new Date().toISOString(), petId);
   // 清掉该宠物未完成的猜数字局（否则 resign 后无法再开局）
   db.prepare("UPDATE guess_sessions SET status = 'abandoned', updated_at = ? WHERE pet_id = ? AND status = 'active'").run(new Date().toISOString(), petId);
+  db.prepare("UPDATE mole_sessions SET status = 'abandoned', updated_at = ? WHERE pet_id = ? AND status = 'active'").run(new Date().toISOString(), petId);
   // 翻牌局同理清理
   db.prepare("UPDATE memory_sessions SET status = 'abandoned', updated_at = ? WHERE pet_id = ? AND status = 'active'").run(new Date().toISOString(), petId);
 

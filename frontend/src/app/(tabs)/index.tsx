@@ -477,6 +477,172 @@ function GuessModal({
   );
 }
 
+// 打地鼠小游戏弹窗（第四款：服务端权威——地鼠位置与每轮时限由服务器生成/判定，客户端无法作弊）
+function MoleModal({
+  visible,
+  onClose,
+  petName,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  petName: string;
+}) {
+  const [game, setGame] = useState<{
+    sessionId: number;
+    round: number;
+    hole: number;
+    hits: number;
+    rounds: number;
+    finished: boolean;
+    flash: '' | 'hit' | 'miss';
+    history: { text: string; type: 'info' }[];
+    coinReward?: number;
+  } | null>(null);
+  const [remaining, setRemaining] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const petId = usePetStore.getState().pet?.id;
+
+  const startGame = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await apiFetch<{
+        sessionId: number; round: number; hole: number; hits: number;
+        deadlineMs: number; rounds: number; resumed: boolean; message: string;
+      }>(`/pet/${petId}/mole/start`, { method: 'POST' });
+      setGame({
+        sessionId: result.sessionId,
+        round: result.round,
+        hole: result.hole,
+        hits: result.hits,
+        rounds: result.rounds,
+        finished: false,
+        flash: '',
+        history: [{ text: result.message, type: 'info' }],
+      });
+      setRemaining(result.deadlineMs);
+    } catch (err: any) {
+      setError(err.message || '开局失败，再试一次喵');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (visible && !game) startGame();
+    if (!visible) setGame(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const whack = async (hole: number) => {
+    if (!game || busy || game.finished) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await apiFetch<{
+        result: 'hit' | 'miss' | 'finished';
+        round?: number; hole?: number; hits: number; deadlineMs?: number;
+        coinReward?: number; totalCoins?: number; message?: string;
+      }>(`/pet/${petId}/mole/whack`, {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: game.sessionId, hole }),
+      });
+      if (result.result === 'finished') {
+        setGame(g => g ? {
+          ...g, finished: true, hits: result.hits, coinReward: result.coinReward,
+          history: [...g.history, { text: result.message || '本局结束', type: 'info' }],
+        } : g);
+        if (typeof result.totalCoins === 'number') usePetStore.getState().updateCoins(result.totalCoins);
+        await usePetStore.getState().fetchPet();
+        return;
+      }
+      setGame(g => g ? {
+        ...g, round: result.round!, hole: result.hole!, hits: result.hits,
+        flash: result.result === 'hit' ? 'hit' : 'miss',
+        history: [...g.history.slice(-3), {
+          text: result.result === 'hit' ? `💥 敲中！第 ${result.round} 轮` : '💨 没敲到，下一只', type: 'info',
+        }],
+      } : g);
+      setRemaining(result.deadlineMs || 0);
+      setTimeout(() => setGame(g => g ? { ...g, flash: '' } : g), 250);
+    } catch (err: any) {
+      setError(err.message || '网络卡了一下，再敲~');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 倒计时：归零自动判「没敲到」（服务器同样会按超时判 miss，双端口径一致）
+  useEffect(() => {
+    if (!game || game.finished) return;
+    if (remaining <= 0) {
+      if (!busy) whack(-1);
+      return;
+    }
+    const t = setTimeout(() => setRemaining(r => Math.max(0, r - 100)), 100);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game?.round, remaining, game?.finished]);
+
+  const moleVisibleCell = game && !game.finished && remaining > 0 ? game.hole : -1;
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.moleOverlay}>
+        <View style={styles.moleSheet}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.rpsTitle}>🔨 和{petName}打地鼠</Text>
+            <TouchableOpacity onPress={onClose}><Text style={styles.modalClose}>✕</Text></TouchableOpacity>
+          </View>
+
+          {error !== '' && <Text style={styles.guessHistoryText}>{error}</Text>}
+
+          {game && !game.finished && (
+            <>
+              <Text style={styles.moleStatus}>
+                第 {game.round + 1}/{game.rounds} 轮 · 命中 {game.hits} · {(remaining / 1000).toFixed(1)}s
+              </Text>
+              <View style={styles.moleGrid}>
+                {Array.from({ length: 9 }, (_, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={[styles.moleHole, moleVisibleCell === i && styles.moleHoleActive]}
+                    activeOpacity={0.7}
+                    onPress={() => whack(i)}
+                    disabled={busy}
+                  >
+                    <Text style={styles.moleEmoji}>{moleVisibleCell === i ? (game.flash === 'hit' ? '💥' : '🐹') : '🕳️'}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.moleFlash}>{game.flash === 'hit' ? '💥 中！' : game.flash === 'miss' ? '💨 溜了' : '👀 盯紧…'}</Text>
+            </>
+          )}
+
+          {game?.finished && (
+            <View style={styles.moleDoneBox}>
+              <Text style={styles.moleDoneText}>{game.history[game.history.length - 1].text}</Text>
+              <Text style={styles.moleDoneScore}>命中 {game.hits}/{game.rounds}{typeof game.coinReward === 'number' && game.coinReward > 0 ? ` · 🪙+${game.coinReward}` : ''}</Text>
+              <View style={styles.guessInputRow}>
+                <TouchableOpacity style={styles.guessBtn} onPress={startGame} disabled={busy}>
+                  <Text style={styles.guessBtnText}>🔄 再来一局</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.guessBtn, styles.guessRetryBtn]} onPress={onClose}>
+                  <Text style={styles.guessBtnText}>完成</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {!game && <Text style={styles.guessHistoryText}>{error || (busy ? '开局中…' : '')}</Text>}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // 记忆翻牌小游戏弹窗（第三款：8 张卡片找 4 对；桌面服务端存底防作弊，慢了少拿金币不惩罚）
 function MemoryModal({
   visible,
@@ -691,6 +857,7 @@ export default function HomeScreen() {
   const [rpsVisible, setRpsVisible] = useState(false);
   const [guessVisible, setGuessVisible] = useState(false);
   const [memoryVisible, setMemoryVisible] = useState(false);
+  const [moleVisible, setMoleVisible] = useState(false);
   const [retireVisible, setRetireVisible] = useState(false);
   const [retireBusy, setRetireBusy] = useState(false);
   const eventAttempted = useRef(false); // 每次进入 app 只尝试拉取一次随机事件
@@ -906,6 +1073,10 @@ export default function HomeScreen() {
               <Text style={styles.actionIcon}>🃏</Text>
               <Text style={styles.actionLabel}>翻翻乐</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.actionBtn} onPress={() => setMoleVisible(true)} activeOpacity={0.7}>
+              <Text style={styles.actionIcon}>🔨</Text>
+              <Text style={styles.actionLabel}>打地鼠</Text>
+            </TouchableOpacity>
           </>
         )}
         {/* 作息入口：哄睡 / 叫醒（蛋不需要睡觉） */}
@@ -939,6 +1110,13 @@ export default function HomeScreen() {
       <MemoryModal
         visible={memoryVisible}
         onClose={() => setMemoryVisible(false)}
+        petName={pet.name}
+      />
+
+      {/* 打地鼠小游戏 */}
+      <MoleModal
+        visible={moleVisible}
+        onClose={() => setMoleVisible(false)}
         petName={pet.name}
       />
 
@@ -1058,6 +1236,25 @@ export default function HomeScreen() {
 // ============================================================
 
 const styles = StyleSheet.create({
+  moleOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+  modalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    width: '100%', paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#F0F0F0',
+  },
+  modalClose: { fontSize: 15, color: '#999', fontWeight: '600' },
+  moleSheet: { width: '88%', backgroundColor: '#FFF', borderRadius: 18, padding: 16 },
+  moleStatus: { fontSize: 13, color: '#8A7A6A', textAlign: 'center', marginTop: 8, fontWeight: '600' },
+  moleGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10, marginTop: 12 },
+  moleHole: {
+    width: 84, height: 84, borderRadius: 16, backgroundColor: '#F5EFE6',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  moleHoleActive: { backgroundColor: '#FFE8D2', borderWidth: 2, borderColor: '#E8A87C' },
+  moleEmoji: { fontSize: 40 },
+  moleFlash: { fontSize: 14, color: '#B08D57', textAlign: 'center', marginTop: 10, fontWeight: '700', minHeight: 20 },
+  moleDoneBox: { alignItems: 'center', paddingVertical: 18, gap: 10 },
+  moleDoneText: { fontSize: 15, color: '#5A4A4A', fontWeight: '700', textAlign: 'center' },
+  moleDoneScore: { fontSize: 14, color: '#B08D57', fontWeight: '600' },
   container: { flex: 1, backgroundColor: '#FFF5F7' },
   content: { padding: 20, paddingBottom: 40, alignItems: 'center' },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFF5F7' },

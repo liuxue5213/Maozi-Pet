@@ -407,6 +407,31 @@ db.exec(`
     PRIMARY KEY (user_id, game_date)
   );
 
+  -- 打地鼠：对局（sequence 服务端存底防作弊，round_started_at 为本轮服务端判定起点）
+  CREATE TABLE IF NOT EXISTS mole_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    pet_id TEXT NOT NULL,
+    sequence TEXT NOT NULL,
+    current_round INTEGER NOT NULL DEFAULT 0,
+    hits INTEGER NOT NULL DEFAULT 0,
+    round_started_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_mole_sessions_user_status ON mole_sessions(user_id, status);
+
+  -- 打地鼠：每日局数与命中统计
+  CREATE TABLE IF NOT EXISTS mole_daily (
+    user_id TEXT NOT NULL,
+    game_date TEXT NOT NULL,
+    game_count INTEGER NOT NULL DEFAULT 0,
+    hit_total INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, game_date)
+  );
+
   -- 习惯打卡：现实习惯 + 每日打卡记录（软删除 archived 保留历史 streak 口径）
   CREATE TABLE IF NOT EXISTS user_habits (
     id TEXT PRIMARY KEY,
