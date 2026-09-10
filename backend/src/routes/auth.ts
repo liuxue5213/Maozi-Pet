@@ -107,6 +107,44 @@ authRouter.delete('/account', authMiddleware, (req: Request, res: Response) => {
   res.json({ message: '账号已注销，所有数据已删除。感谢陪伴，再见 🌈' });
 });
 
+// 全量数据导出（个保法可携带权：记忆可带走，整个账号也可带走）
+authRouter.get('/export', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const user = db.prepare('SELECT id, nickname, type, avatar_emoji, coins, diamonds, created_at FROM users WHERE id = ?').get(userId) as any;
+  if (!user) {
+    res.status(404).json({ error: '账号不存在' });
+    return;
+  }
+
+  const pets = db.prepare('SELECT * FROM pets WHERE user_id = ?').all(userId);
+  const petIds = pets.map((p: any) => p.id);
+  const equips = petIds.length
+    ? db.prepare(`SELECT * FROM pet_equips WHERE pet_id IN (${petIds.map(() => '?').join(',')})`).all(...petIds)
+    : [];
+  const memories = db.prepare('SELECT content, created_at FROM pet_memories WHERE user_id = ? ORDER BY created_at').all(userId);
+  const chats = db.prepare('SELECT pet_id, role, content, created_at FROM chat_messages WHERE user_id = ? ORDER BY id DESC LIMIT 200').all(userId);
+  const posts = db.prepare('SELECT id, content, likes_count, comments_count, created_at FROM posts WHERE user_id = ? ORDER BY id DESC').all(userId);
+  const habits = db.prepare('SELECT id, name, icon, freezes, awarded_milestones, archived, created_at FROM user_habits WHERE user_id = ?').all(userId);
+  const habitCheckins = db.prepare('SELECT habit_id, checkin_date FROM habit_checkins WHERE user_id = ?').all(userId);
+  const achievements = db.prepare('SELECT achievement_id, unlocked_at FROM user_achievements WHERE user_id = ?').all(userId);
+  const checkins = db.prepare('SELECT checkin_date, streak_day, reward_coins FROM checkin_records WHERE user_id = ?').all(userId);
+  const friends = db.prepare('SELECT friend_id FROM friendships WHERE user_id = ?').all(userId);
+
+  res.json({
+    exportedAt: new Date().toISOString(),
+    profile: user,
+    pets: pets.map((p: any) => ({ ...p, equips: equips.filter((e: any) => e.pet_id === p.id) })),
+    memories,
+    chatMessagesLatest: chats,
+    posts,
+    habits,
+    habitCheckins,
+    achievements,
+    checkinRecords: checkins,
+    friendCount: friends.length,
+  });
+});
+
 // ============================================================
 // 游客快速开始
 // ============================================================

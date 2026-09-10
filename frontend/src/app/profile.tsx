@@ -12,6 +12,7 @@ import {
   TextInput,
   Alert,
   Platform,
+  Share,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { apiFetch, clearToken } from '../config/env';
@@ -131,6 +132,30 @@ export default function ProfileScreen() {
   const handleLogout = async () => {
     await clearToken();
     router.replace('/login');
+  };
+
+  // 导出全部数据（个保法可携带权：Web 下载 JSON / 原生系统分享）
+  const handleExportAll = async () => {
+    try {
+      const data = await apiFetch<Record<string, unknown>>('/auth/export');
+      if (Platform.OS === 'web') {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `帽子AI宠物-我的数据.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const keys = Object.keys(data);
+        await Share.share({
+          title: '帽子AI宠物 - 我的数据',
+          message: `我的帽子数据包（${keys.join('、')} 等）已生成，含宠物/记忆/帖子/习惯全量信息。`,
+        });
+      }
+    } catch (err: any) {
+      Alert.alert('提示', err.message || '导出失败，请重试');
+    }
   };
 
   // 注销账号：两层确认（不可逆 + 数据全删），成功后清本地凭证回登录页
@@ -370,6 +395,11 @@ export default function ProfileScreen() {
         <Text style={styles.archiveBtnText}>🏛️ 宠物档案馆</Text>
       </TouchableOpacity>
 
+      {/* 导出全部数据（可携带权） */}
+      <TouchableOpacity style={styles.exportAllBtn} onPress={handleExportAll}>
+        <Text style={styles.exportAllText}>📥 导出我的全部数据（JSON）</Text>
+      </TouchableOpacity>
+
       {/* 注销账号（合规：数据可删） */}
       <TouchableOpacity style={styles.deleteAccountBtn} onPress={handleDeleteAccount}>
         <Text style={styles.deleteAccountText}>注销账号（永久删除全部数据）</Text>
@@ -576,6 +606,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   upgradeBtnText: { fontSize: 13, fontWeight: '600', color: '#5A7A6A' },
+  exportAllBtn: { alignSelf: 'center', marginTop: 16, paddingVertical: 8, paddingHorizontal: 12 },
+  exportAllText: { fontSize: 12, color: '#8A9AB0', fontWeight: '600' },
   deleteAccountBtn: { alignSelf: 'center', marginTop: 18, paddingVertical: 8, paddingHorizontal: 12 },
   deleteAccountText: { fontSize: 12, color: '#C0C0C0' },
   logoutBtn: {

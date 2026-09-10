@@ -95,6 +95,20 @@ const EQUIP_POSITIONS: Record<string, { top?: number; bottom?: number; left?: nu
   effect: { top: 28, left: 14 },
 };
 
+// 时段问候 + 当季 emoji（轻氛围：让首页每天不同时刻都有人跟你打招呼）
+function timeGreeting(now: Date = new Date()): string {
+  const h = now.getHours();
+  const month = now.getMonth() + 1;
+  const season = month >= 3 && month <= 5 ? '🌸春' : month >= 6 && month <= 8 ? '☀️夏' : month >= 9 && month <= 11 ? '🍂秋' : '❄️冬';
+  const word =
+    h >= 5 && h < 10 ? '早上好' :
+    h < 12 ? '上午好' :
+    h < 14 ? '中午好' :
+    h < 18 ? '下午好' :
+    h < 23 ? '晚上好' : '夜深了';
+  return `${season} ${word}`;
+}
+
 // 情绪外显：按状态优先级决定宠物表情（睡觉 > 心情 > 饥饿 > 清洁 > 体力）
 function moodState(stats: { hunger: number; cleanliness: number; mood: number; energy: number }): { emoji: string; hint: string } | null {
   if (stats.mood < 30) return { emoji: '😿', hint: '它心情低落，陪它玩玩吧' };
@@ -1031,6 +1045,7 @@ export default function HomeScreen() {
 
       {/* 宠物名称 + 阶段标签 + 性格标签 */}
       <View style={styles.header}>
+        <Text style={styles.greetingText}>{timeGreeting()}</Text>
         <TouchableOpacity style={styles.petNameRow} onLongPress={() => { setRenameText(pet.name); setRenameVisible(true); }}>
           <Text style={styles.petName}>{pet.name}</Text>
           <Text style={styles.petNameEdit}>✏️</Text>
@@ -1289,6 +1304,7 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   moleOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+  greetingText: { fontSize: 12, color: '#B08D57', marginBottom: 4, fontWeight: '600' },
   petNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   petNameEdit: { fontSize: 13, opacity: 0.45 },
   renameTitle: { fontSize: 15, fontWeight: '700', color: '#5A4A4A', textAlign: 'center', marginBottom: 12 },

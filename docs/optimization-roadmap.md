@@ -49,6 +49,12 @@
 - 排障：60235 僵尸 tsx 进程 N+1 次出现（3 个 tsx watch 并存，旧代码占端口导致首轮冒烟全走旧逻辑）→ pkill 全量 + 干净重启（路线图既定流程）；冒烟脚本 sed 改写把 JSON 引号弄坏致孵化 500 假警报
 - 遗留记录：streak repair（断签复活，Android Police 报道的 Duolingo 限时机制）列为候选；冻结券商店购买（宝石）暂不做——反焦虑定位下保护不商业化
 
+## Run @2026-09-10 12:00（第 14 轮：全量数据导出 + 首页时段问候）
+- **完成 ①全量数据导出**（个保法可携带权：记忆可带走 → 整个账号也可带走）：`GET /auth/export`（profile/pets+equips/memories/最近 200 条聊天/posts/habits+checkins/achievements/checkin_records）；profile 页「📥 导出我的全部数据」（Web 下载 JSON / 原生分享）
+- **完成 ②首页时段问候**：按小时问候（早/上午/中午/下午/晚/夜深）+ 当季 emoji（🌸☀️🍂❄️），轻氛围让首页每个时刻都不同
+- **测试**：导出冒烟 2/2（数据全囊括/未登录 401）+ 双端 typecheck + Web 构建 + 141 单测全绿
+- 冒烟排障：python sqlite3 未提交的 INSERT 持写锁把服务端 better-sqlite3 写全堵成 500——脚本补 commit 即愈（产品无恙，测试方法论入库）
+
 ## Run @2026-09-10 11:00-11:15（第 13 轮：本晨代码对抗式走查 + 部署全量同步确认）
 - **🎉 部署完全同步**：服务器 buildSha = 435f2e6 = origin/main HEAD，今晨全部功能（通知中心/改名/金秋限定/打地鼠/周报/注销/配图）已在生产运行；Build & Test CI 全绿
 - **走查范围**：第 7-12 轮自产代码的边界场景
