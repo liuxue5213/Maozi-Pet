@@ -432,6 +432,19 @@ db.exec(`
     PRIMARY KEY (user_id, game_date)
   );
 
+  -- 站内通知（点赞/评论/串门互动提醒；每用户保留最新 50 条）
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    actor_id TEXT,
+    type TEXT NOT NULL,
+    content TEXT NOT NULL,
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
+
   -- 习惯打卡：现实习惯 + 每日打卡记录（软删除 archived 保留历史 streak 口径）
   CREATE TABLE IF NOT EXISTS user_habits (
     id TEXT PRIMARY KEY,

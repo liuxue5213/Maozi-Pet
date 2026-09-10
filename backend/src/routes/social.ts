@@ -10,6 +10,7 @@ import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 import { todayStr } from '../utils/today';
 import { calcStreakWithFreeze, parseDayList } from '../utils/habits';
 import { bumpTaskProgress } from '../utils/tasks';
+import { pushNotification } from '../utils/notify';
 import {
   imageExtFromMime, validateBase64Image, isValidPostImageUrl, filenameFromPostImageUrl,
 } from '../utils/upload';
@@ -278,6 +279,12 @@ socialRouter.post('/posts/:postId/like', authMiddleware, (req: Request, res: Res
       tx.prepare('INSERT INTO post_likes (post_id, user_id, created_at) VALUES (?, ?, ?)').run(postId, userId, now);
       tx.prepare('UPDATE posts SET likes_count = likes_count + 1 WHERE id = ?').run(postId);
     });
+    // 站内通知：告知帖主（自赞跳过）
+    const likedPost = db.prepare('SELECT user_id, content FROM posts WHERE id = ?').get(postId) as any;
+    const likeActor = db.prepare('SELECT nickname FROM users WHERE id = ?').get(userId) as any;
+    if (likedPost) {
+      pushNotification(likedPost.user_id, userId, 'like', `${likeActor?.nickname || '有人'} 赞了你的帖子「${String(likedPost.content).slice(0, 12)}…」`);
+    }
     res.json({ isLiked: true, message: '点赞成功' });
   }
 });
@@ -348,6 +355,12 @@ socialRouter.post('/posts/:postId/comments', authMiddleware, (req: Request, res:
   });
 
   const user = db.prepare('SELECT nickname FROM users WHERE id = ?').get(userId) as any;
+
+  // 站内通知：告知帖主（自评跳过）
+  const commentedPost = db.prepare('SELECT user_id FROM posts WHERE id = ?').get(postId) as any;
+  if (commentedPost) {
+    pushNotification(commentedPost.user_id, userId, 'comment', `${user?.nickname || '有人'} 评论了你的帖子：「${content.trim().slice(0, 15)}」`);
+  }
 
   res.status(201).json({
     comment: {
@@ -636,6 +649,11 @@ socialRouter.post('/friends/:friendId/pets/:petId/interact', authMiddleware, (re
     res.status(400).json({ error: err.message || '互动失败' });
     return;
   }
+
+  // 站内通知：告知宠物主人（自串自跳过由 pushNotification 兜底）
+  const visitor = db.prepare('SELECT nickname FROM users WHERE id = ?').get(userId) as any;
+  const visitedPet = db.prepare('SELECT name FROM pets WHERE id = ?').get(petId) as any;
+  pushNotification(friendId, userId, 'visit', `${visitor?.nickname || '有朋友'} 来串门${type === 'gift' ? '送了礼物 🎁' : '点赞 👍'}，${visitedPet?.name || '宠物'}很开心`);
 
   const updated = db.prepare(`
     SELECT stats_hunger, stats_mood FROM pets WHERE id = ?

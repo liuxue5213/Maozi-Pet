@@ -17,6 +17,7 @@ import { shopRouter } from './routes/shop';
 import { tasksRouter } from './routes/tasks';
 import { achievementsRouter } from './routes/achievements';
 import { habitsRouter } from './routes/habits';
+import { notificationsRouter } from './routes/notifications';
 import { pushRouter } from './routes/push';
 import { dispatchPetCarePushes, dispatchHabitReminderPushes } from './utils/push';
 import { startTokenCleanupLoop } from './utils/tokens';
@@ -96,6 +97,7 @@ app.use('/api/shop', shopRouter);
 app.use('/api/tasks', tasksRouter);
 app.use('/api/achievements', achievementsRouter);
 app.use('/api/habits', habitsRouter);
+app.use('/api/notifications', notificationsRouter);
 app.use('/api/push', pushRouter);
 
 // ============================================================

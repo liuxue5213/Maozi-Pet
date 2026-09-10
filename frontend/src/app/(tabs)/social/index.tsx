@@ -210,11 +210,31 @@ export default function SocialScreen() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [showComments, setShowComments] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [notices, setNotices] = useState<{ id: number; type: string; content: string; is_read: number; created_at: string }[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [showNotices, setShowNotices] = useState(false);
+
+  const fetchNotices = useCallback(async () => {
+    try {
+      const r = await apiFetch<{ items: typeof notices; unreadCount: number }>('/notifications');
+      setNotices(r.items);
+      setUnread(r.unreadCount);
+    } catch { /* 静默：红点拉取失败不打扰主流程 */ }
+  }, []);
+
+  const markAllRead = async () => {
+    try {
+      await apiFetch('/notifications/read', { method: 'POST' });
+      setUnread(0);
+      setNotices(list => list.map(n => ({ ...n, is_read: 1 })));
+    } catch { /* 忽略 */ }
+  };
 
   // 进入页面时加载
   useFocusEffect(
     useCallback(() => {
       fetchPosts(true);
+      fetchNotices();
     }, [])
   );
 
@@ -301,6 +321,9 @@ export default function SocialScreen() {
         </TouchableOpacity>
         <TouchableOpacity style={styles.topTab} onPress={() => router.push('/social/friends')}>
           <Text style={styles.topTabText}>好友</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.topTab} onPress={() => { setShowNotices(true); if (unread > 0) markAllRead(); }}>
+          <Text style={styles.topTabText}>🔔{unread > 0 ? unread : '通知'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -408,6 +431,36 @@ export default function SocialScreen() {
 
       {/* 评论弹窗 */}
       <CommentModal visible={showComments} onClose={() => setShowComments(false)} post={selectedPost} />
+
+      {/* 通知中心 */}
+      <Modal visible={showNotices} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>🔔 通知</Text>
+              <TouchableOpacity onPress={() => setShowNotices(false)}>
+                <Text style={styles.modalClose}>关闭</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 420 }}>
+              {notices.length === 0 && (
+                <Text style={{ textAlign: 'center', color: '#BBB', padding: 30, fontSize: 13 }}>
+                  还没有通知~ 去和大家互动吧
+                </Text>
+              )}
+              {notices.map(n => (
+                <View key={n.id} style={[styles.noticeRow, !n.is_read && styles.noticeRowUnread]}>
+                  <Text style={styles.noticeIcon}>{n.type === 'like' ? '❤️' : n.type === 'comment' ? '💬' : '🏠'}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.noticeContent}>{n.content}</Text>
+                    <Text style={styles.noticeTime}>{getTimeAgo(n.created_at)}</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -440,6 +493,13 @@ function stageLabel(stage: string): string {
 // ============================================================
 
 const styles = StyleSheet.create({
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingVertical: 14 },
+  noticeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 16 },
+  noticeRowUnread: { backgroundColor: '#FFF6E8' },
+  noticeIcon: { fontSize: 20 },
+  noticeContent: { fontSize: 13, color: '#5A4A4A' },
+  noticeTime: { fontSize: 11, color: '#BBB', marginTop: 2 },
   imageAttachBtn: { paddingHorizontal: 10, paddingVertical: 8 },
   imageAttachText: { fontSize: 13, color: '#8A7A6A', fontWeight: '600' },
   imagePreviewRow: { paddingHorizontal: 16, marginTop: 10 },
