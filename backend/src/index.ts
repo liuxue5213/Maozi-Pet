@@ -80,6 +80,8 @@ app.get('/api/health', (_req, res) => {
     status: 'ok',
     service: '帽子AI宠物 - 后端',
     version: '1.0.0',
+    // 部署可验证性：CI 写入 .env 的构建 SHA（本地开发无此变量则为 null）
+    buildSha: process.env.BUILD_SHA || null,
     timestamp: new Date().toISOString(),
   });
 });

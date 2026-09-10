@@ -88,6 +88,7 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT || '22' }}
           script: |
+            set -e
             cd /opt/maozi-pet/backend
 
             # 安装生产依赖
@@ -97,6 +98,7 @@ jobs:
             cat > .env << 'ENVEOF'
             NODE_ENV=production
             SERVER_PORT=60235
+            BUILD_SHA=${{ github.sha }}
             BAILIAN_API_KEY=${{ secrets.BAILIAN_API_KEY }}
             BAILIAN_BASE_URL=${{ secrets.BAILIAN_BASE_URL }}
             BAILIAN_MODEL=${{ secrets.BAILIAN_MODEL || 'qwen-plus' }}
@@ -109,18 +111,21 @@ jobs:
               npm install -g pm2
             fi
 
-            # 启动或重启
-            pm2 describe maozi-pet-backend > /dev/null 2>&1
-            if [ $? -eq 0 ]; then
-              pm2 restart maozi-pet-backend --update-env
-            else
-              pm2 start dist/index.js --name maozi-pet-backend
-            fi
+            # 关键：删除旧进程登记后按【本目录的绝对路径】重新启动。
+            # 旧进程可能登记的是早期手动部署的其它目录，pm2 restart 会一直跑旧代码
+            # （症状：部署全绿但线上路由不更新），故此处不做 describe 分支，统一重建。
+            pm2 delete maozi-pet-backend > /dev/null 2>&1 || true
+            pm2 start /opt/maozi-pet/backend/dist/index.js --name maozi-pet-backend --cwd /opt/maozi-pet/backend
 
             # 保存 PM2 进程列表
             pm2 save
 
-            echo "🎉 后端部署完成！"
+            # 部署后自检：服务必须在本机应答健康检查，否则本工作流失败（不再假阳性）
+            sleep 3
+            curl -sf http://127.0.0.1:60235/api/health > /dev/null || {
+              echo "❌ 健康检查失败，pm2 状态如下"; pm2 status; pm2 logs maozi-pet-backend --lines 30 --nostream; exit 1;
+            }
+            echo "🎉 后端部署完成（build ${{ github.sha }}）！"
             pm2 status
 
   # --- 前端 Web 部署（可选） ---
