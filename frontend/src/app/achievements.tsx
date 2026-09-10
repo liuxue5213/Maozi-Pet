@@ -44,6 +44,7 @@ export default function AchievementsScreen() {
             totalCount: number;
             newCount: number;
             diamondsEarned: number;
+            metrics: Record<string, number>;
           }>('/achievements');
           setAchievements(result.achievements);
           setUnlockedCount(result.unlockedCount);
