@@ -126,7 +126,12 @@ export default function OnboardingScreen() {
       {hatchError ? (
         <Text style={styles.errorText}>{hatchError}</Text>
       ) : (
-        <Text style={styles.hint}>💡 性格将永久影响宠物的说话方式哦~</Text>
+        <>
+          <Text style={styles.hint}>💡 性格将永久影响宠物的说话方式哦~</Text>
+          <Text style={styles.onboardTips}>
+            🌱 孵化后记得：每天来签到领金币 · 坚持现实好习惯让它成长 · 晚上哄睡恢复体力
+          </Text>
+        </>
       )}
     </ScrollView>
   );
@@ -189,5 +194,13 @@ const styles = StyleSheet.create({
   hatchBtnDisabled: { opacity: 0.6 },
   hatchBtnText: { fontSize: 18, fontWeight: '700', color: '#FFF' },
   hint: { fontSize: 12, color: '#BBB', textAlign: 'center', marginTop: 16 },
+  onboardTips: {
+    fontSize: 12,
+    color: '#B08D57',
+    textAlign: 'center',
+    marginTop: 10,
+    lineHeight: 18,
+    paddingHorizontal: 10,
+  },
   errorText: { fontSize: 12, color: '#C0392B', textAlign: 'center', marginTop: 16 },
 });

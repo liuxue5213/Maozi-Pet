@@ -1,5 +1,15 @@
 # 竞品分析（追加式日志）
 
+## 2026-09-10 08:00 扫描（日间周期：定位文案/商店页赛道）
+
+| 竞品 | 核心做法 | 对本项目的启示 |
+|------|---------|--------------|
+| **Finch**（App Store 编辑精选） | 商店页一句话定位 =「Take care of your pet by taking care of yourself」互惠照顾框架；广告投放瞄准抑郁症/日常失序人群的「低压力陪伴」而非效率工具 | README 定位语采纳互惠框架；我们已有的习惯→宠物成长闭环正是这套叙事的产品化，文案要跟上实现 |
+| **Finch 商业验证**（sparrowapps 复盘） | $30M ARR 零融资；ADHD/心理健康社区口碑自传播（r/adhdwomen：宠物机制是他们能坚持的唯一原因） | 「无压力」不是营销话术而是留存机制——R20 断签文案走查方向正确，后续 streak 冻结券延续 |
+| **self-care pet 品类**（aidorable） | 「照顾虚拟宠物=完成自我微行动」成为独立品类 | 帽子AI宠物的习惯打卡+里程碑已站进该品类；商店页素材（海报导出）可按此叙事组织 |
+
+来源：[foxdata-Finch 编辑精选拆解](https://foxdata.com/en/blogs/finch-as-app-store-editors-choice-a-self-care-companion/)、[sparrowapps-Finch $30M ARR 复盘](https://blog.sparrowapps.io/p/finch-how-a-self-care-app-hit-30m-arr-without-vc-money)、[motion-Finch 投放素材库](https://motionapp.com/library/brands/finch)、[aidorable-self-care pet 品类](https://www.aidorable.ai/blog/self-care-pet-app)
+
 ## 2026-09-10 08:00 扫描（日间周期 08 点轮：推送/提醒赛道）
 
 | 竞品/共识 | 核心做法 | 对本项目的启示 |
