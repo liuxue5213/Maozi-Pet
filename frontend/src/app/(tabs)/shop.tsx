@@ -61,6 +61,17 @@ export default function ShopScreen() {
   const [checkin, setCheckin] = useState<CheckinStatus | null>(null);
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [dailyTasks, setDailyTasks] = useState<{ title: string; progress: number; target: number; done: boolean }[]>([]);
+
+  // 签到页聚合每日任务进度（P2 遗留：领奖仍去首页任务卡，这里只看进度）
+  const loadTaskProgress = async () => {
+    try {
+      const result = await apiFetch<{ tasks: { title: string; progress: number; target: number; done: boolean }[] }>('/tasks/daily');
+      setDailyTasks(result.tasks);
+    } catch {
+      // 静默：辅助信息不打扰主流程
+    }
+  };
 
   const shopCategories = [
     { id: 'all', name: '全部', icon: '🛍️' },
@@ -76,6 +87,7 @@ export default function ShopScreen() {
     useCallback(() => {
       fetchCheckin();
       fetchItems();
+      loadTaskProgress();
     }, [selectedCategory])
   );
 
@@ -223,6 +235,24 @@ export default function ShopScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* 今日任务进度聚合（领奖去首页任务卡） */}
+        {dailyTasks.length > 0 && (
+          <View style={styles.taskStripCard}>
+            <Text style={styles.taskStripTitle}>📋 今日任务进度</Text>
+            {dailyTasks.map(t => (
+              <View key={t.title} style={styles.taskStripRow}>
+                <Text style={styles.taskStripName}>{t.title}</Text>
+                <View style={styles.taskStripBarBg}>
+                  <View style={[styles.taskStripBarFill, { width: `${Math.min(100, Math.round((t.progress / t.target) * 100))}%` }]} />
+                </View>
+                <Text style={[styles.taskStripMeta, t.done && styles.taskStripMetaDone]}>
+                  {t.done ? '✓' : `${t.progress}/${t.target}`}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* 分类筛选 */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryBar}>
           {shopCategories.map(cat => (
@@ -318,6 +348,17 @@ export default function ShopScreen() {
 // ============================================================
 
 const styles = StyleSheet.create({
+  taskStripCard: {
+    backgroundColor: '#FFF', borderRadius: 16, padding: 14, marginBottom: 12,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+  },
+  taskStripTitle: { fontSize: 14, fontWeight: '700', color: '#5A4A4A', marginBottom: 10 },
+  taskStripRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  taskStripName: { fontSize: 12, color: '#8A7A6A', width: 90 },
+  taskStripBarBg: { flex: 1, height: 6, borderRadius: 3, backgroundColor: '#F0EAE0', overflow: 'hidden' },
+  taskStripBarFill: { height: '100%', borderRadius: 3, backgroundColor: '#E8A87C' },
+  taskStripMeta: { fontSize: 11, color: '#A89888', width: 34, textAlign: 'right' },
+  taskStripMetaDone: { color: '#7A9A6A', fontWeight: '700' },
   container: { flex: 1, backgroundColor: '#FFF5F7' },
   topBar: {
     flexDirection: 'row',
