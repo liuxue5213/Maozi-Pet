@@ -418,6 +418,9 @@ export default function ProfileScreen() {
       <TouchableOpacity style={styles.archiveBtn} onPress={() => router.push('/archive')}>
         <Text style={styles.archiveBtnText}>🏛️ 宠物档案馆</Text>
       </TouchableOpacity>
+      <TouchableOpacity style={styles.archiveBtn} onPress={() => router.push('/stats')}>
+        <Text style={styles.archiveBtnText}>📊 成长档案</Text>
+      </TouchableOpacity>
 
       {/* 导出全部数据（可携带权） */}
       <TouchableOpacity style={styles.exportAllBtn} onPress={handleExportAll}>
