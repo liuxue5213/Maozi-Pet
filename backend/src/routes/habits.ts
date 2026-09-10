@@ -15,7 +15,8 @@ import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 import { todayStr } from '../utils/today';
 import {
-  MAX_HABITS, CHECK_MOOD, CHECK_COINS, calcStreak,
+  MAX_HABITS, CHECK_MOOD, CHECK_COINS, MAX_FREEZES, calcStreakWithFreeze,
+  grantFreezes, parseDayList, serializeDayList,
   pendingMilestone, nextMilestone, parseAwarded, serializeAwarded, MilestoneDef,
 } from '../utils/habits';
 import { applyExp } from '../utils/growth';
@@ -27,26 +28,31 @@ interface HabitRow {
   name: string;
   icon: string;
   created_at: string;
+  freezes: number;
+  freeze_dates: string | null;
 }
 
-// 习惯列表（含 streak / 今日已打卡 / 累计天数）
+// 习惯列表（含 streak（冻结券桥接口径）/ 今日已打卡 / 累计天数 / 冻结券余量）
 habitsRouter.get('/', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
-  const habits = db.prepare('SELECT id, name, icon, created_at FROM user_habits WHERE user_id = ? AND archived = 0 ORDER BY created_at').all(userId) as HabitRow[];
+  const habits = db.prepare('SELECT id, name, icon, created_at, freezes, freeze_dates FROM user_habits WHERE user_id = ? AND archived = 0 ORDER BY created_at').all(userId) as HabitRow[];
   const today = todayStr();
 
   const list = habits.map(h => {
     const days = (db.prepare('SELECT checkin_date FROM habit_checkins WHERE habit_id = ?').all(h.id) as any[])
       .map(r => r.checkin_date as string);
-    const streak = calcStreak(days, today);
-    const next = nextMilestone(streak);
+    const frozen = calcStreakWithFreeze(days, today, h.freezes, parseDayList(h.freeze_dates));
+    const next = nextMilestone(frozen.streak);
     return {
       id: h.id,
       name: h.name,
       icon: h.icon,
-      streak,
+      streak: frozen.streak,
       checkedToday: days.includes(today),
       totalCheckins: days.length,
+      freezes: Math.max(0, Math.min(MAX_FREEZES, h.freezes)),
+      // 濒断但有券：预览口径已把昨天桥接进来（未消费），前端可提示「冻结券保护中」
+      freezeProtected: frozen.newFrozenDays.length > 0,
       nextMilestoneDays: next?.days ?? null,
       nextMilestoneExp: next?.exp ?? null,
     };
@@ -90,7 +96,7 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
   const { id } = req.params;
   const today = todayStr();
 
-  const habit = db.prepare('SELECT id, name, awarded_milestones FROM user_habits WHERE id = ? AND user_id = ? AND archived = 0').get(id, userId) as (HabitRow & { awarded_milestones: string | null }) | undefined;
+  const habit = db.prepare('SELECT id, name, awarded_milestones, freezes, freeze_dates FROM user_habits WHERE id = ? AND user_id = ? AND archived = 0').get(id, userId) as (HabitRow & { awarded_milestones: string | null }) | undefined;
   if (!habit) {
     res.status(404).json({ error: '习惯不存在' });
     return;
@@ -101,6 +107,8 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
   let petSleeping = false;
   let petName = '';
   let streak = 0;
+  let freezesLeft = Math.max(0, Math.min(MAX_FREEZES, habit.freezes));
+  let frozenDaysUsed = 0;
   type MilestoneAward = MilestoneDef & { petName: string; newLevel: number; leveledUp: boolean };
   let milestoneAwarded: MilestoneAward | null = null;
 
@@ -133,24 +141,38 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
         }
       }
 
+      // streak（冻结券桥接口径）：漏打 1 天自动消费 1 张桥接，消费只在打卡时刻落库
       const days = (tx.prepare('SELECT checkin_date FROM habit_checkins WHERE habit_id = ?').all(id) as any[])
         .map(r => r.checkin_date as string);
-      streak = calcStreak(days, today);
+      const frozen = calcStreakWithFreeze(days, today, habit.freezes, parseDayList(habit.freeze_dates));
+      streak = frozen.streak;
+      const frozenDates = parseDayList(habit.freeze_dates);
+      for (const d of frozen.newFrozenDays) frozenDates.add(d);
+      frozenDaysUsed = frozen.newFrozenDays.length;
+      freezesLeft = Math.max(0, habit.freezes - frozenDaysUsed);
 
       // 里程碑 → 宠物经验（与心情/金币同事务）。睡觉也发：经验是成长结算而非即时状态，
       // 唤醒结算只写 stats 列不覆盖 level/exp/stage；退休/无宠物时跳过且不标记，
       // pendingMilestone 的 >= 语义保证之后打卡自动补发
       const awarded = parseAwarded(habit.awarded_milestones);
       const milestone = pendingMilestone(streak, awarded);
-      if (milestone && pet) {
-        const growth = applyExp(pet, milestone.exp);
-        tx.prepare('UPDATE pets SET level = ?, exp = ?, stage = ?, updated_at = ? WHERE id = ?')
-          .run(growth.level, growth.exp, growth.stage, new Date().toISOString(), pet.id);
-        awarded.add(milestone.days);
-        tx.prepare('UPDATE user_habits SET awarded_milestones = ? WHERE id = ?').run(serializeAwarded(awarded), id);
-        return { ...milestone, petName: pet.name, newLevel: growth.level, leveledUp: growth.leveledUp };
+      if (milestone) {
+        // 7/14/21 天档奖励冻结券（3 天档不给）；无宠物也照发券（券是习惯资产，不依赖宠物）
+        freezesLeft = grantFreezes(freezesLeft, milestone.days);
+        if (pet) {
+          const growth = applyExp(pet, milestone.exp);
+          tx.prepare('UPDATE pets SET level = ?, exp = ?, stage = ?, updated_at = ? WHERE id = ?')
+            .run(growth.level, growth.exp, growth.stage, new Date().toISOString(), pet.id);
+          milestoneAwarded = { ...milestone, petName: pet.name, newLevel: growth.level, leveledUp: growth.leveledUp };
+          awarded.add(milestone.days);
+        }
       }
-      return null;
+      // 冻结券消费/奖励 + 里程碑标记合并为一次 user_habits 写入
+      if (frozenDaysUsed > 0 || milestone) {
+        tx.prepare('UPDATE user_habits SET freezes = ?, freeze_dates = ?, awarded_milestones = ? WHERE id = ?')
+          .run(freezesLeft, serializeDayList(frozenDates), serializeAwarded(awarded), id);
+      }
+      return milestoneAwarded;
     });
   } catch (err: any) {
     if (err.message === 'ALREADY_CHECKED') {
@@ -166,13 +188,14 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
   if (coinReward > 0) message += ` 🪙+${coinReward}`;
   if (petMoodApplied) message += ` ${petName} 心情+${CHECK_MOOD}`;
   else if (petSleeping) message += `（${petName} 睡得正香 😴 心情奖励明天继续）`;
+  if (frozenDaysUsed > 0) message += ` 🧊 冻结券帮你把漏打的${frozenDaysUsed}天补上了，连续记录保住啦`;
   if (milestoneAwarded) {
     message += ` 🎉 ${milestoneAwarded.icon} ${milestoneAwarded.title}达成！${milestoneAwarded.petName} 经验+${milestoneAwarded.exp}`;
     if (milestoneAwarded.leveledUp) message += `，升到 Lv.${milestoneAwarded.newLevel}！`;
   }
 
   const coins = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any)?.coins ?? 0;
-  res.json({ message, streak, coinReward, petMoodApplied, totalCoins: coins, milestone: milestoneAwarded });
+  res.json({ message, streak, coinReward, petMoodApplied, totalCoins: coins, milestone: milestoneAwarded, freezesLeft });
 });
 
 // 删除习惯（软删除：归档保留打卡历史，防 streak 口径断裂）

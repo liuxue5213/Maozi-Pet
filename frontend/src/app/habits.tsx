@@ -24,6 +24,8 @@ interface Habit {
   streak: number;
   checkedToday: boolean;
   totalCheckins: number;
+  freezes: number;
+  freezeProtected: boolean;
   nextMilestoneDays: number | null;
   nextMilestoneExp: number | null;
 }
@@ -147,6 +149,7 @@ export default function HabitsScreen() {
         <Text style={styles.headerSubtitle}>坚持现实中的好习惯，帽子陪你一起成长</Text>
         <Text style={styles.headerReward}>每次打卡：宠物 +5 心情 · 你 +2 金币</Text>
         <Text style={styles.headerMilestone}>🎯 连续 3 / 7 / 14 / 21 天解锁里程碑，宠物经验大礼 + 成就徽章 +💎</Text>
+        <Text style={styles.headerMilestone}>🧊 冻结券：偶尔漏打 1 天自动帮你保住连续记录（7/14/21 天里程碑 +1）</Text>
       </View>
 
       {message !== '' && (
@@ -173,11 +176,12 @@ export default function HabitsScreen() {
                   <Text style={styles.habitName}>{habit.name}</Text>
                   <Text style={styles.habitMeta}>
                     {habit.streak > 0
-                      ? `🔥 连续 ${habit.streak} 天${habit.checkedToday ? '' : ' · 今天打卡就续上啦'}`
+                      ? `🔥 连续 ${habit.streak} 天${habit.freezeProtected && !habit.checkedToday ? ' · 🧊 冻结券保护中' : habit.checkedToday ? '' : ' · 今天打卡就续上啦'}`
                       : habit.totalCheckins > 0
                         ? '🌱 断了也没关系，随时可以从今天重新开始'
                         : '🌱 从第 1 天开始吧'}
                     {' · '}累计 {habit.totalCheckins} 次
+                    {habit.freezes > 0 ? ` · 🧊×${habit.freezes}` : ''}
                   </Text>
                   {habit.nextMilestoneDays !== null && (
                     <Text style={styles.habitMilestone}>

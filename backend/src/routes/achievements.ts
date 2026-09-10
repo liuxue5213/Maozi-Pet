@@ -7,7 +7,7 @@ import { Router, Request, Response } from 'express';
 import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 import { ACHIEVEMENT_DEFS, evaluateAchievements, diffNewlyUnlocked, AchievementMetrics, DIAMOND_PER_ACHIEVEMENT } from '../utils/achievements';
-import { calcStreak } from '../utils/habits';
+import { calcStreakWithFreeze, parseDayList } from '../utils/habits';
 import { todayStr } from '../utils/today';
 
 export const achievementsRouter = Router();
@@ -19,14 +19,14 @@ function collectMetrics(userId: string): AchievementMetrics {
     return row?.v ?? 0;
   };
 
-  // habitStreak：全部习惯（含归档，归档保留打卡历史）的最高连续打卡天数
-  const habitDays = db.prepare('SELECT id FROM user_habits WHERE user_id = ?').all(userId) as any[];
+  // habitStreak：全部习惯（含归档，归档保留打卡历史）的最高连续打卡天数（冻结券桥接口径）
+  const habitDays = db.prepare('SELECT id, freezes, freeze_dates FROM user_habits WHERE user_id = ?').all(userId) as any[];
   const today = todayStr();
   let habitStreak = 0;
   for (const h of habitDays) {
     const days = (db.prepare('SELECT checkin_date FROM habit_checkins WHERE habit_id = ?').all(h.id) as any[])
       .map(r => r.checkin_date as string);
-    habitStreak = Math.max(habitStreak, calcStreak(days, today));
+    habitStreak = Math.max(habitStreak, calcStreakWithFreeze(days, today, h.freezes, parseDayList(h.freeze_dates)).streak);
   }
 
   return {

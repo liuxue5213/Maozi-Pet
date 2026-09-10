@@ -1,5 +1,15 @@
 # 竞品分析（追加式日志）
 
+## 2026-09-10 08:40 扫描（日间周期 08 点轮：streak 冻结券机制细节）
+
+| 竞品/共识 | 核心做法 | 对本项目的启示（R23 已落地） |
+|------|---------|--------------|
+| **Duolingo streak freeze**（官方 Shop/Digia UX 拆解） | 冻结券是「防断第一道防线」：**上限持有 2 张**，漏打日自动生效保住 streak；商店用宝石购买 | 我们的 MAX_FREEZES=2 与其上限一致；获取走里程碑（7/14/21 天 +1）而非付费——反焦虑定位下不把「保护」做成付费焦虑 |
+| **Duolingo streak repair/resurrect**（Android Police） | 限时活动让断签用户付费复活最长 streak | 断签修复是后续候选（R25+），先做事前保护（冻结券）再做事后修复 |
+| **No Freeze February 社区反噬**（r/duolingo） | 部分用户觉得冻结券让 streak「变便宜」，发起不用券挑战 | 印证保护需克制：我们规定**连漏两天不桥接**（保护 ≠ 无限豁免）、桥接日必须直接接回真实打卡记录，streak 含金量不被稀释 |
+
+来源：[Digia-Duolingo 习惯提醒 UX 拆解](https://www.digia.tech/post/duolingo-habit-forming-reminders-retention-architecture)、[Medium-Duolingo streak 系统设计拆解](https://medium.com/@salamprem49/duolingo-streak-system-detailed-breakdown-design-flow-886f591c953f)、[UX Collective-更健康的 streak 设计](https://uxdesign.cc/3-reframing-streaks-on-duolingo-5-ideas-for-a-more-healthy-and-flexible-approach-to-language-8fd89545771e)、[Android Police-streak 复活](https://www.androidpolice.com/lost-a-big-duolingo-streak-you-can-get-it-back-all-this-month/)、[r/duolingo-No Freeze February](https://www.reddit.com/r/duolingo/comments/1qsqj88/no_freeze_february/)
+
 ## 2026-09-10 08:00 扫描（日间周期：定位文案/商店页赛道）
 
 | 竞品 | 核心做法 | 对本项目的启示 |

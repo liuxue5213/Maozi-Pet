@@ -5,7 +5,7 @@
  */
 import db from '../db';
 import { todayStr } from './today';
-import { calcStreak } from './habits';
+import { calcStreakWithFreeze, parseDayList } from './habits';
 
 // Expo Push API（免费额度无需令牌；配置 EXPO_ACCESS_TOKEN 后享更高配额）
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
@@ -253,11 +253,12 @@ function collectHabitReminderPushes(now: Date = new Date()): HabitReminderTarget
     `).get(row.userId, today);
     if (reminded) continue;
 
-    const habits = db.prepare('SELECT id, name FROM user_habits WHERE user_id = ? AND archived = 0').all(row.userId) as any[];
+    const habits = db.prepare('SELECT id, name, freezes, freeze_dates FROM user_habits WHERE user_id = ? AND archived = 0').all(row.userId) as any[];
     const cands = habits.map(h => {
       const days = (db.prepare('SELECT checkin_date FROM habit_checkins WHERE habit_id = ?').all(h.id) as any[])
         .map(r => r.checkin_date as string);
-      return { id: h.id, name: h.name, streak: calcStreak(days, today), checkedToday: days.includes(today) };
+      // 冻结券桥接口径：streak 被券保护时仍视为存活，值得提醒守护
+      return { id: h.id, name: h.name, streak: calcStreakWithFreeze(days, today, h.freezes, parseDayList(h.freeze_dates)).streak, checkedToday: days.includes(today) };
     });
     const pick = pickHabitReminder(cands);
     if (!pick) continue;

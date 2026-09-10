@@ -2,6 +2,20 @@
 
 > Run 日志（最新在上）
 
+## Run @2026-09-10 08:00-08:55（第 6 轮：R23 习惯 streak 冻结券）
+- **认领协调**：08:02 并行会话已交付 R22（README 刷新），本会话接棒 R23（R19 遗留立项的 Duolingo streak freeze 对标）
+- **竞品扫描**（已录入 competitor-analysis.md）：Duolingo 冻结券上限 2 张、漏打日自动生效（Digia UX 拆解称「防断第一道防线」）；streak repair 复活机制列后续候选；**No Freeze February 社区反噬**（部分用户嫌券让 streak 变便宜）→ 印证保护须克制
+- **完成 R23：习惯 streak 冻结券**
+  · `utils/habits.ts`：`calcStreakWithFreeze`（桥接口径：漏打**恰好 1 天**且有券余量、断点直接接回真实打卡记录才桥接；**连漏两天不桥**——保护 ≠ 无限豁免；历史已消费日期免费续接防重复扣券）；`calcStreak` 委托实现（余量 0 同口径，旧测试不变）；`grantFreezes`（7/14/21 里程碑 +1、封顶 MAX_FREEZES=2）；`parseDayList/serializeDayList`
+  · `user_habits` 新列 freezes（**DEFAULT 1**——新建/存量习惯都自带 1 张第 2 周弃用高峰保护）/ freeze_dates（ensureColumn 迁移）
+  · `routes/habits.ts`：打卡事务内消费（新断点日期落库 + 余量扣减，与心情/金币/里程碑同事务）；**里程碑发券与经验发放解耦**——无宠物也发券（券是习惯资产），经验仍走 >= 补发语义；消费/奖励合并为一次 user_habits 写入；响应带 freezesLeft、列表带 freezes/freezeProtected（濒断被券保护时前端显示「🧊 冻结券保护中」）
+  · 口径对齐三调用点：social.ts 广场/串门 habitStreak、push.ts 习惯提醒候选、achievements.ts habitStreak 徽章指标——全部切到桥接口径（习惯页/社交外显/徽章数字一致）
+  · 前端 habits.tsx：卡片 🧊×N 余量 + 「冻结券保护中」状态 + header 玩法说明行
+- 测试：+11 单测（桥接/不桥/预览/已消费免费续接/跨月/发券封顶/脏数据）→ **113 全绿**；双端 typecheck ✅
+- 冒烟：漏打 1 天打卡 → streak=4（3 真实+1 桥接）、🧊 文案、freeze_dates 落 2026-09-09、券 1→0；重复打卡 400 幂等；带宠物 7 天 → 七日之燃 经验+40 升 Lv.2 + 券 1→2（封顶）；成就 habit_3/habit_7 徽章解锁；广场 author.habitStreak=7 桥接口径一致
+- 排障：60235 僵尸 tsx 进程 N+1 次出现（3 个 tsx watch 并存，旧代码占端口导致首轮冒烟全走旧逻辑）→ pkill 全量 + 干净重启（路线图既定流程）；冒烟脚本 sed 改写把 JSON 引号弄坏致孵化 500 假警报
+- 遗留记录：streak repair（断签复活，Android Police 报道的 Duolingo 限时机制）列为候选；冻结券商店购买（宝石）暂不做——反焦虑定位下保护不商业化
+
 ## Run @2026-09-10 08:00-08:12（第 5 轮：R22 README/新手指引刷新）
 - **竞品扫描**（已录入 competitor-analysis.md）：Finch 互惠照顾定位（照顾宠物=照顾自己）/$30M ARR 零融资/App Store 编辑精选/ADHD 社区口碑——「无压力」是留存机制而非话术
 - **README 刷新**：核心差异化补「互惠照顾」框架 + 习惯 streak 卖点；V1.5 清单从 6 月版追平两夜+日间全部交付（睡觉作息/猜数字/习惯打卡+里程碑+提醒/钻石经济/海报导出/家具/社交补全），测试数 42→102；项目结构路由表补 habits.ts；V2.0 候选录入 streak 冻结券

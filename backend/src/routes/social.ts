@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 import { todayStr } from '../utils/today';
-import { calcStreak } from '../utils/habits';
+import { calcStreakWithFreeze, parseDayList } from '../utils/habits';
 
 export const socialRouter = Router();
 
@@ -18,12 +18,13 @@ export const socialRouter = Router();
  * 调用面已各自有隐私闸门（广场设置/好友关系），此处不再重复判定
  */
 function bestHabitStreak(userId: string, today: string): number {
-  const habits = db.prepare('SELECT id FROM user_habits WHERE user_id = ? AND archived = 0').all(userId) as any[];
+  const habits = db.prepare('SELECT id, freezes, freeze_dates FROM user_habits WHERE user_id = ? AND archived = 0').all(userId) as any[];
   let best = 0;
   for (const h of habits) {
     const days = (db.prepare('SELECT checkin_date FROM habit_checkins WHERE habit_id = ?').all(h.id) as any[])
       .map(r => r.checkin_date as string);
-    best = Math.max(best, calcStreak(days, today));
+    // 冻结券桥接口径，与习惯页外显一致（漏打 1 天被券保护时社交外显不断档）
+    best = Math.max(best, calcStreakWithFreeze(days, today, h.freezes, parseDayList(h.freeze_dates)).streak);
   }
   return best;
 }

@@ -111,3 +111,90 @@ test('awarded_milestones 序列化往返 + 脏数据安全', () => {
   assert.deepEqual([...parseAwarded('')], []);
   assert.deepEqual([...parseAwarded('abc,,3,-2,0')], [3]);
 });
+
+// === Round 23：streak 冻结券（Duolingo streak freeze 对标） ===
+import {
+  MAX_FREEZES, MILESTONE_FREEZE_DAYS, calcStreakWithFreeze, grantFreezes,
+  parseDayList, serializeDayList,
+} from './habits';
+
+test('冻结券常量：上限 2 张、奖励档为 7/14/21 天', () => {
+  assert.equal(MAX_FREEZES, 2);
+  assert.deepEqual(MILESTONE_FREEZE_DAYS, [7, 14, 21]);
+});
+
+test('无断点时冻结券口径与 calcStreak 一致、零消费', () => {
+  const days = ['2026-09-08', '2026-09-09', '2026-09-10'];
+  const r = calcStreakWithFreeze(days, '2026-09-10', 1, []);
+  assert.equal(r.streak, 3);
+  assert.deepEqual(r.newFrozenDays, []);
+});
+
+test('昨天漏打 1 天：有券自动桥接 streak 不断、记录新消费', () => {
+  // 8 号打了、9 号漏了、10 号回来打卡：8+桥接9+10 = 3
+  const days = ['2026-09-08', '2026-09-10'];
+  const r = calcStreakWithFreeze(days, '2026-09-10', 1, []);
+  assert.equal(r.streak, 3);
+  assert.deepEqual(r.newFrozenDays, ['2026-09-09']);
+});
+
+test('昨天漏打但没券：只数今天，不桥接', () => {
+  const days = ['2026-09-08', '2026-09-10'];
+  const r = calcStreakWithFreeze(days, '2026-09-10', 0, []);
+  assert.equal(r.streak, 1);
+  assert.deepEqual(r.newFrozenDays, []);
+});
+
+test('连漏两天不桥接（保护 ≠ 无限豁免），有 2 张券也不桥', () => {
+  const days = ['2026-09-07', '2026-09-10'];
+  const r = calcStreakWithFreeze(days, '2026-09-10', 2, []);
+  assert.equal(r.streak, 1);
+  assert.deepEqual(r.newFrozenDays, []);
+});
+
+test('今天没打时预览桥接：昨天断点被券保护，streak 仍显示存活', () => {
+  // 8 号打了、9 号漏了、今天 10 号还没打：预览 streak=2（8 号+桥接 9 号）且列出待消费断点
+  const days = ['2026-09-08'];
+  const r = calcStreakWithFreeze(days, '2026-09-10', 1, []);
+  assert.equal(r.streak, 2);
+  assert.deepEqual(r.newFrozenDays, ['2026-09-09']);
+});
+
+test('历史已消费的冻结日免费续接，不再重复扣券', () => {
+  // 8 号打了、9 号漏打（已消费过券）、10 号打卡后再查询：8+桥接9+10 = 3
+  const days = ['2026-09-08', '2026-09-10'];
+  const r = calcStreakWithFreeze(days, '2026-09-10', 0, ['2026-09-09']);
+  assert.equal(r.streak, 3);
+  assert.deepEqual(r.newFrozenDays, []);
+});
+
+test('冻结桥必须直接接回真实打卡日：断点前没记录则不桥', () => {
+  // 只有今天打了，昨天和前天都空：没得接，不消费券
+  const days = ['2026-09-10'];
+  const r = calcStreakWithFreeze(days, '2026-09-10', 1, []);
+  assert.equal(r.streak, 1);
+  assert.deepEqual(r.newFrozenDays, []);
+});
+
+test('冻结券跨月/跨年桥接（prevDay 口径复用）', () => {
+  const r = calcStreakWithFreeze(['2026-08-31', '2026-09-02'], '2026-09-02', 1, []);
+  assert.equal(r.streak, 3);
+  assert.deepEqual(r.newFrozenDays, ['2026-09-01']);
+});
+
+test('grantFreezes：7/14/21 档 +1 且封顶 2 张，3 档不给、非法输入安全', () => {
+  assert.equal(grantFreezes(0, 7), 1);
+  assert.equal(grantFreezes(1, 14), 2);
+  assert.equal(grantFreezes(2, 21), 2, '已满 2 张不再累加');
+  assert.equal(grantFreezes(0, 3), 0, '3 天档不发券');
+  assert.equal(grantFreezes(1, 3), 1);
+  assert.equal(grantFreezes(-5, 7), 1, '负数当前值先归零再发');
+  assert.equal(grantFreezes(Number.NaN, 7), 1);
+});
+
+test('freeze_dates 序列化往返 + 脏数据过滤', () => {
+  assert.deepEqual([...parseDayList('2026-09-10,2026-09-09')].sort(), ['2026-09-09', '2026-09-10']);
+  assert.equal(serializeDayList(['2026-09-10', '2026-09-09', '2026-09-10']), '2026-09-09,2026-09-10');
+  assert.deepEqual([...parseDayList(null)], []);
+  assert.deepEqual([...parseDayList('abc,2026-9-9,2026-09-09,')], ['2026-09-09']);
+});
