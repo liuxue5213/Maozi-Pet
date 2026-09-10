@@ -49,6 +49,12 @@
 - 排障：60235 僵尸 tsx 进程 N+1 次出现（3 个 tsx watch 并存，旧代码占端口导致首轮冒烟全走旧逻辑）→ pkill 全量 + 干净重启（路线图既定流程）；冒烟脚本 sed 改写把 JSON 引号弄坏致孵化 500 假警报
 - 遗留记录：streak repair（断签复活，Android Police 报道的 Duolingo 限时机制）列为候选；冻结券商店购买（宝石）暂不做——反焦虑定位下保护不商业化
 
+## Run @2026-09-10 21:45-22:20（第 19 轮：AI 聊天感知现实习惯 + 抓到早退守卫缺陷）
+- **完成：AI 聊天注入习惯上下文**——chat 路由组装「主人的现实习惯」块（每个习惯：名称 + 冻结桥接口径 streak + 今日打卡状态），注入 buildSystemPrompt；反焦虑口径写进 prompt（只温柔提起，绝不催促责备）。宠物从此知道「你今天喝水了没」，聊天即可自然关心
+- **🪲 冒烟抓到 1 个真缺陷并修复**：buildSystemPrompt 开头的早退守卫 `if(!petState && memories.length===0 && !recallInstruction) return base;` 会把新用户（无记忆、请求未带 petState）的**习惯块整个吞掉**（实测 systemPrompt 仅 163 字）。修复：守卫条件补 `&& !habitContext`。排障方法论：DEBUG_PROMPT=1 临时日志打印 habitContext/systemPrompt/fnSrc 三件套 → 运行时函数源码暴露早退分支（期间还揪出 60235 僵尸进程 EADDRINUSE 竞态：kill 后未等端口释放即启动，一律 kill -9 + sleep 2 + 端口确认）
+- **修复后端到端**：已打卡用户问「我今天阅读打卡了吗？」→ 宠物准确回答「已完成阅读打卡啦」并鼓励继续 ✓；141 单测全绿
+- 随本次推送上线
+
 ## Run @2026-09-10 22:00-22:10（第 18 轮：成就页进度可视化）
 - 徽章卡未解锁态新增进度条（当前指标值/阈值，如 habitStreak 5/21）——把「还差多少」从黑盒变成看得见的牵引；数据源 = GET /achievements 既有 metrics 字段，零后端改动
 - typecheck + 冒烟通过；随推送上线

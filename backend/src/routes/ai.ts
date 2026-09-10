@@ -11,6 +11,7 @@ import { bumpTaskProgress } from '../utils/tasks';
 import { extractFacts } from '../utils/memory';
 import { isMessageFromToday, buildRecallInstruction, buildLocalRecallReply } from '../utils/recall';
 import { pickWeekMemories, buildWeeklyShareText } from '../utils/weekly';
+import { calcStreakWithFreeze, parseDayList } from '../utils/habits';
 
 export const aiRouter = Router();
 
@@ -161,7 +162,24 @@ aiRouter.post('/chat', authMiddleware, async (req: Request, res: Response) => {
     const isFirstChatToday = petId ? !isMessageFromToday(lastMsgRow?.created_at) : false;
     const recallInstruction = isFirstChatToday ? buildRecallInstruction(petInfo?.name || '帽子', memories) : null;
 
-    const systemPrompt = buildSystemPrompt(personality, req.body.petState, petInfo, memories, recallInstruction ?? undefined);
+    // 主人的习惯上下文：今日打卡情况 + 连续天数（AI 知道你有没有照顾好自己的现实习惯）
+    let habitContext: string | undefined;
+    try {
+      const habits = db.prepare('SELECT id, name, freezes, freeze_dates FROM user_habits WHERE user_id = ? AND archived = 0').all(userId) as any[];
+      if (habits.length > 0) {
+        const today = todayStr();
+        const lines: string[] = [];
+        for (const h of habits) {
+          const days = (db.prepare('SELECT checkin_date FROM habit_checkins WHERE habit_id = ?').all(h.id) as any[])
+            .map(r => r.checkin_date as string);
+          const st = calcStreakWithFreeze(days, today, h.freezes, parseDayList(h.freeze_dates));
+          const state = days.includes(today) ? '今天已打卡' : '今天还没打（可以温柔提起，不要催）';
+          lines.push(`- 「${h.name}」：连续 ${st.streak} 天，${state}`);
+        }
+        habitContext = lines.join('\n');
+      }
+    } catch { /* 习惯上下文失败不影响聊天主流程 */ }
+    const systemPrompt = buildSystemPrompt(personality, req.body.petState, petInfo, memories, recallInstruction ?? undefined, habitContext);
 
     // --- 调用 AI（带超时），失败时用本地回复兜底 ---
     let aiResponse: string;
@@ -377,9 +395,9 @@ aiRouter.post('/event', authMiddleware, async (req: Request, res: Response) => {
 // 内部函数
 // ============================================================
 
-function buildSystemPrompt(personality: string, petState?: any, petInfo?: any, memories: string[] = [], recallInstruction?: string): string {
+function buildSystemPrompt(personality: string, petState?: any, petInfo?: any, memories: string[] = [], recallInstruction?: string, habitContext?: string): string {
   const base = PERSONALITY_PROMPTS[personality] || PERSONALITY_PROMPTS.cute;
-  if (!petState && memories.length === 0 && !recallInstruction) return base;
+  if (!petState && memories.length === 0 && !recallInstruction && !habitContext) return base;
 
   const stageNames: Record<string, string> = {
     egg: '宠物蛋',
@@ -406,6 +424,14 @@ function buildSystemPrompt(personality: string, petState?: any, petInfo?: any, m
     lines.push('');
     lines.push('【关于主人的记忆】（你亲身记得这些事，聊天时可自然提及，不要罗列）');
     memories.forEach(m => lines.push(`- ${m}`));
+  }
+
+  // 主人的现实习惯（AI 陪伴 × 习惯养成差异点：宠物知道你今天的打卡情况，
+  // 反焦虑口径——只温柔提起，绝不催促责备）
+  if (habitContext) {
+    lines.push('');
+    lines.push('【主人的现实习惯】（你可以自然关心，但绝不催促、不责备、不制造焦虑）');
+    lines.push(habitContext);
   }
 
   // 当前状态（petState 与记忆相互独立，任一存在即可构建）
