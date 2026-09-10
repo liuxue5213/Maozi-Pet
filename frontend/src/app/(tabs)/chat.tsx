@@ -28,6 +28,9 @@ export default function ChatScreen() {
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [showMemories, setShowMemories] = useState(false);
+  const [showWeekly, setShowWeekly] = useState(false);
+  const [weekly, setWeekly] = useState<{ petName: string; total: number; weeklyCount: number; items: { content: string; created_at: string }[]; shareText: string } | null>(null);
+  const [weeklyLoading, setWeeklyLoading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   // 装扮外显：气泡样式（默认宠物消息白底）+ 皮肤描边
@@ -70,6 +73,39 @@ export default function ChatScreen() {
     if (!pet) return;
     fetchMemories(pet.id);
     setShowMemories(true);
+  };
+
+  // 打开本周记忆周报（滚动 7 天窗口，宠物口吻分享文案由后端生成）
+  const openWeekly = async () => {
+    if (!pet || weeklyLoading) return;
+    setWeeklyLoading(true);
+    try {
+      const data = await apiFetch<{
+        petName: string; total: number; weeklyCount: number;
+        items: { content: string; created_at: string }[]; shareText: string;
+      }>(`/ai/memories/${pet.id}/weekly`);
+      setWeekly(data);
+      setShowWeekly(true);
+    } catch (err: any) {
+      Alert.alert('提示', err.message || '周报加载失败，请重试');
+    } finally {
+      setWeeklyLoading(false);
+    }
+  };
+
+  // 分享周报（原生系统分享 / Web 复制到剪贴板）
+  const handleShareWeekly = async () => {
+    if (!weekly) return;
+    if (Platform.OS === 'web') {
+      try {
+        await navigator.clipboard.writeText(weekly.shareText);
+        Alert.alert('已复制', '周报文案已复制到剪贴板，去粘贴分享吧~');
+      } catch {
+        Alert.alert('提示', '复制失败，请长按文案手动复制');
+      }
+      return;
+    }
+    await Share.share({ title: `${weekly.petName}的记忆周报`, message: weekly.shareText });
   };
 
   // 遗忘一条记忆（二次确认）
@@ -217,6 +253,9 @@ export default function ChatScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>🧠 它记得的事</Text>
               <View style={styles.modalHeaderActions}>
+                <TouchableOpacity style={styles.exportBtn} onPress={openWeekly} disabled={weeklyLoading}>
+                  <Text style={styles.exportBtnText}>{weeklyLoading ? '加载中…' : '📄 周报'}</Text>
+                </TouchableOpacity>
                 {memories.length > 0 && (
                   <TouchableOpacity style={styles.exportBtn} onPress={handleExport}>
                     <Text style={styles.exportBtnText}>📥 导出</Text>
@@ -252,11 +291,63 @@ export default function ChatScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* 记忆周报：本周记下的小事 + 一键分享 */}
+      <Modal visible={showWeekly} animationType="slide" transparent onRequestClose={() => setShowWeekly(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>📄 {weekly?.petName ?? '宠物'}的周报</Text>
+              <TouchableOpacity onPress={() => setShowWeekly(false)}>
+                <Text style={styles.modalClose}>完成</Text>
+              </TouchableOpacity>
+            </View>
+            {weekly && (
+              <>
+                <Text style={styles.weeklySubtitle}>
+                  近 7 天记下了 {weekly.weeklyCount} 件小事（累计 {weekly.total} 条记忆）
+                </Text>
+                <FlatList
+                  data={weekly.items}
+                  keyExtractor={(item, i) => `${i}-${item.created_at}`}
+                  renderItem={({ item }) => (
+                    <View style={styles.memoryRow}>
+                      <View style={styles.memoryContent}>
+                        <Text style={styles.memoryText}>{item.content}</Text>
+                        <Text style={styles.memoryTime}>{item.created_at.slice(5, 10)} 记下的</Text>
+                      </View>
+                    </View>
+                  )}
+                  ListEmptyComponent={
+                    <View style={styles.memoryEmpty}>
+                      <Text style={styles.memoryEmptyText}>
+                        这周还没有新记忆~ 多和它聊聊，说「我叫...」「我喜欢...」，它会记在心里
+                      </Text>
+                    </View>
+                  }
+                />
+                <TouchableOpacity style={styles.weeklyShareBtn} onPress={handleShareWeekly}>
+                  <Text style={styles.weeklyShareBtnText}>📣 分享周报</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  weeklySubtitle: { fontSize: 12, color: '#999', paddingHorizontal: 16, paddingBottom: 8 },
+  weeklyShareBtn: {
+    margin: 16,
+    backgroundColor: '#E8A87C',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  weeklyShareBtnText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
   container: { flex: 1, backgroundColor: '#FFF5F7' },
   headerBar: {
     paddingHorizontal: 16,
