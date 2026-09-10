@@ -529,6 +529,11 @@ const ITEM_DEFS = [
   { id: 'effect_fire', name: '火焰特效', category: 'effect', icon: '🔥', description: '火力全开', price_coins: 250, rarity: 'epic', shop_category: 'effect', sort_order: 20 },
   { id: 'effect_sakura', name: '樱花飘落', category: 'effect', icon: '🌸', description: '落英缤纷', price_coins: 180, rarity: 'rare', shop_category: 'effect', sort_order: 21, is_limited: 1 },
   { id: 'effect_snow', name: '雪花飘飘', category: 'effect', icon: '❄️', description: '冬日浪漫', price_coins: 180, rarity: 'rare', shop_category: 'effect', sort_order: 22, is_limited: 1 },
+  // 金秋限定（2026 秋，is_limited 标记限定身份）
+  { id: 'hat_maple', name: '枫叶头饰', category: 'hat', icon: '🍁', description: '金秋限定 · 一叶知秋', price_coins: 130, rarity: 'rare', shop_category: 'decoration', sort_order: 7, is_limited: 1 },
+  { id: 'cloth_sweater', name: '暖秋毛衣', category: 'clothing', icon: '🧥', description: '金秋限定 · 毛线暖意', price_coins: 170, rarity: 'rare', shop_category: 'decoration', sort_order: 12, is_limited: 1 },
+  { id: 'acc_persimmon', name: '小柿子', category: 'accessory', icon: '🍊', description: '金秋限定 · 柿柿如意', price_coins: 90, rarity: 'common', shop_category: 'decoration', sort_order: 17, is_limited: 1 },
+  { id: 'effect_ginkgo', name: '银杏纷飞', category: 'effect', icon: '🍂', description: '金秋限定 · 满城尽带黄金甲', price_coins: 180, rarity: 'rare', shop_category: 'effect', sort_order: 23, is_limited: 1 },
 
   // === 宠物皮肤（花色） ===
   { id: 'skin_tabby', name: '虎斑猫', category: 'skin', icon: '🐯', description: '威风凛凛的虎斑', price_coins: 150, rarity: 'rare', shop_category: 'skin', sort_order: 23 },

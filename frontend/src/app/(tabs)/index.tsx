@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   Modal,
   TextInput,
+  Alert,
 } from 'react-native';
 import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { usePetStore, INTERACTION_LABELS } from '../../store/petStore';
@@ -858,6 +859,9 @@ export default function HomeScreen() {
   const [guessVisible, setGuessVisible] = useState(false);
   const [memoryVisible, setMemoryVisible] = useState(false);
   const [moleVisible, setMoleVisible] = useState(false);
+  const [renameVisible, setRenameVisible] = useState(false);
+  const [renameText, setRenameText] = useState('');
+  const [renaming, setRenaming] = useState(false);
   const [retireVisible, setRetireVisible] = useState(false);
   const [retireBusy, setRetireBusy] = useState(false);
   const eventAttempted = useRef(false); // 每次进入 app 只尝试拉取一次随机事件
@@ -937,6 +941,25 @@ export default function HomeScreen() {
     }, [])
   );
 
+  const handleRename = async () => {
+    const name = renameText.trim();
+    if (!name || renaming || !pet) return;
+    setRenaming(true);
+    try {
+      await apiFetch(`/pet/${pet.id}/rename`, {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      await usePetStore.getState().fetchPet();
+      setRenameVisible(false);
+      setRenameText('');
+    } catch (err: any) {
+      Alert.alert('提示', err.message || '改名失败，请重试');
+    } finally {
+      setRenaming(false);
+    }
+  };
+
   const handleInteract = async (action: 'feed' | 'clean' | 'play' | 'comfort' | 'pet') => {
     const message = await interact(action);
     setInteractMessage(message);
@@ -1008,7 +1031,10 @@ export default function HomeScreen() {
 
       {/* 宠物名称 + 阶段标签 + 性格标签 */}
       <View style={styles.header}>
-        <Text style={styles.petName}>{pet.name}</Text>
+        <TouchableOpacity style={styles.petNameRow} onLongPress={() => { setRenameText(pet.name); setRenameVisible(true); }}>
+          <Text style={styles.petName}>{pet.name}</Text>
+          <Text style={styles.petNameEdit}>✏️</Text>
+        </TouchableOpacity>
         <View style={styles.stageTag}>
           <Text style={styles.stageTagText}>
             {pet.stage === 'egg' ? '宠物蛋' : pet.stage === 'child' ? '幼体' : pet.stage === 'teen' ? '少年' : '成年'} Lv.{pet.level}
@@ -1119,6 +1145,32 @@ export default function HomeScreen() {
         onClose={() => setMoleVisible(false)}
         petName={pet.name}
       />
+
+      {/* 改名弹窗（长按宠物名字打开） */}
+      <Modal visible={renameVisible} animationType="fade" transparent onRequestClose={() => setRenameVisible(false)}>
+        <View style={styles.moleOverlay}>
+          <View style={styles.moleSheet}>
+            <Text style={styles.renameTitle}>给{pet.name}改个新名字</Text>
+            <TextInput
+              style={styles.renameInput}
+              value={renameText}
+              onChangeText={setRenameText}
+              placeholder="1-10 个字符"
+              placeholderTextColor="#BBB"
+              maxLength={10}
+              autoFocus
+            />
+            <View style={styles.guessInputRow}>
+              <TouchableOpacity style={[styles.guessBtn, (!renameText.trim() || renaming) && styles.guessRetryBtn]} onPress={handleRename} disabled={!renameText.trim() || renaming}>
+                <Text style={styles.guessBtnText}>{renaming ? '...' : '确定'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.guessBtn, styles.guessRetryBtn]} onPress={() => setRenameVisible(false)}>
+                <Text style={styles.guessBtnText}>取消</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* 每日任务 */}
       {tasks.length > 0 && (
@@ -1237,6 +1289,13 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   moleOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+  petNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  petNameEdit: { fontSize: 13, opacity: 0.45 },
+  renameTitle: { fontSize: 15, fontWeight: '700', color: '#5A4A4A', textAlign: 'center', marginBottom: 12 },
+  renameInput: {
+    width: 220, backgroundColor: '#F8F4EE', borderRadius: 12, paddingHorizontal: 14,
+    paddingVertical: 10, fontSize: 16, color: '#5A4A4A', textAlign: 'center', marginBottom: 14,
+  },
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     width: '100%', paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#F0F0F0',

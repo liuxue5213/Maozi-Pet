@@ -1313,6 +1313,31 @@ petRouter.post('/:petId/mole/whack', authMiddleware, (req: Request, res: Respons
   });
 });
 
+// 改名（主人专属；蛋也可以改，孵化前想好名字≠不能反悔）
+petRouter.post('/:petId/rename', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { petId } = req.params;
+  const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+
+  if (!name || name.length > 10) {
+    res.status(400).json({ error: '名字需要 1-10 个字符' });
+    return;
+  }
+
+  const row = db.prepare('SELECT id, name, is_retired FROM pets WHERE id = ? AND user_id = ?').get(petId, userId) as any;
+  if (!row) {
+    res.status(404).json({ error: '宠物不存在' });
+    return;
+  }
+  if (row.is_retired) {
+    res.status(400).json({ error: '退休的帽子名字已载入档案馆，不再更改' });
+    return;
+  }
+
+  db.prepare('UPDATE pets SET name = ?, updated_at = ? WHERE id = ?').run(name, new Date().toISOString(), petId);
+  res.json({ message: `以后就叫「${name}」啦！`, name });
+});
+
 // 退休宠物
 petRouter.post('/:petId/retire', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
