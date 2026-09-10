@@ -10,8 +10,16 @@ import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 import { todayStr } from '../utils/today';
 import { calcStreakWithFreeze, parseDayList } from '../utils/habits';
 import { bumpTaskProgress } from '../utils/tasks';
+import {
+  imageExtFromMime, validateBase64Image, isValidPostImageUrl, filenameFromPostImageUrl,
+} from '../utils/upload';
+import path from 'path';
+import fs from 'fs';
 
 export const socialRouter = Router();
+
+/** 上传目录（backend/data/uploads，data/ 已在 .gitignore） */
+const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads');
 
 /**
  * 用户活跃习惯的最高 streak（社交外显用）。
@@ -156,6 +164,27 @@ socialRouter.get('/posts', authMiddleware, (req: Request, res: Response) => {
   });
 });
 
+// 上传帖子配图（base64 JSON，免新依赖；mime 白名单 + 体积校验，uuid 文件名防路径注入）
+socialRouter.post('/upload', authMiddleware, (req: Request, res: Response) => {
+  const { base64, mime } = req.body || {};
+
+  const ext = imageExtFromMime(mime);
+  if (!ext) {
+    res.status(400).json({ error: '只支持 jpg/png/webp 图片' });
+    return;
+  }
+  if (validateBase64Image(base64) === null) {
+    res.status(400).json({ error: '图片无效或超过 700KB，请压缩后再传' });
+    return;
+  }
+
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  const filename = `${uuidv4()}.${ext}`;
+  fs.writeFileSync(path.join(UPLOAD_DIR, filename), Buffer.from(base64 as string, 'base64'));
+
+  res.status(201).json({ url: `/uploads/${filename}` });
+});
+
 // 发布帖子
 socialRouter.post('/posts', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
@@ -168,6 +197,11 @@ socialRouter.post('/posts', authMiddleware, (req: Request, res: Response) => {
   }
   if (content.length > 500) {
     res.status(400).json({ error: '内容最多 500 字符' });
+    return;
+  }
+  // 配图只接受本站上传接口返回的路径（防任意外链注入）
+  if (imageUrl !== undefined && imageUrl !== null && !isValidPostImageUrl(imageUrl)) {
+    res.status(400).json({ error: '配图地址无效，请通过上传接口获取' });
     return;
   }
 
@@ -335,7 +369,7 @@ socialRouter.delete('/posts/:postId', authMiddleware, (req: Request, res: Respon
     return;
   }
 
-  const post = db.prepare('SELECT id, user_id FROM posts WHERE id = ?').get(postId) as any;
+  const post = db.prepare('SELECT id, user_id, image_url FROM posts WHERE id = ?').get(postId) as any;
   if (!post) {
     res.status(404).json({ error: '帖子不存在' });
     return;
@@ -350,6 +384,12 @@ socialRouter.delete('/posts/:postId', authMiddleware, (req: Request, res: Respon
     tx.prepare('DELETE FROM post_comments WHERE post_id = ?').run(postId);
     tx.prepare('DELETE FROM posts WHERE id = ?').run(postId);
   });
+
+  // 配图文件 best-effort 清理（失败不影响删帖结果）
+  const imageFile = filenameFromPostImageUrl(post.image_url);
+  if (imageFile) {
+    try { fs.unlinkSync(path.join(UPLOAD_DIR, imageFile)); } catch { /* 已不存在则忽略 */ }
+  }
 
   res.json({ message: '帖子已删除' });
 });

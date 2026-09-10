@@ -85,7 +85,8 @@ interface SocialState {
   // --- Actions ---
   clearError: () => void;
   fetchPosts: (refresh?: boolean) => Promise<void>;
-  createPost: (content: string, petId?: string) => Promise<void>;
+  createPost: (content: string, petId?: string, imageUrl?: string) => Promise<void>;
+  uploadPostImage: (base64: string, mime: string) => Promise<string>;
   deletePost: (postId: number) => Promise<void>;
   toggleLike: (postId: number) => Promise<void>;
   fetchComments: (postId: number) => Promise<void>;
@@ -143,11 +144,19 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     }
   },
 
-  createPost: async (content: string, petId?: string) => {
+  uploadPostImage: async (base64: string, mime: string) => {
+    const result = await apiFetch<{ url: string }>('/social/upload', {
+      method: 'POST',
+      body: JSON.stringify({ base64, mime }),
+    });
+    return result.url;
+  },
+
+  createPost: async (content: string, petId?: string, imageUrl?: string) => {
     try {
       const result = await apiFetch<{ post: Post; message: string }>('/social/posts', {
         method: 'POST',
-        body: JSON.stringify({ content, petId }),
+        body: JSON.stringify({ content, petId, imageUrl }),
       });
 
       // 新帖子插入到列表顶部

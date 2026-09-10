@@ -21,6 +21,9 @@ export const ENV = {
   appVersion: '1.0.0',
 };
 
+/** 静态资源（帖子配图 /uploads/...）基址：apiBaseUrl 去掉尾随 /api */
+export const staticBaseUrl = apiBaseUrl.replace(/\/api\/?$/, '');
+
 // ============================================================
 // Token 管理（持久化到 AsyncStorage）
 // ============================================================

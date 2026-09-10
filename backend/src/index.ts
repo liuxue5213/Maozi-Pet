@@ -7,6 +7,7 @@ import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import path from 'path';
 import { aiRouter } from './routes/ai';
 import { petRouter } from './routes/pet';
 import { socialRouter } from './routes/social';
@@ -63,6 +64,12 @@ const aiLimiter = rateLimit({
 
 // 请求体解析
 app.use(express.json({ limit: '1mb' }));
+
+// 社区帖子配图静态服务（上传接口写入 data/uploads，此处只读对外）
+app.use('/uploads', express.static(path.join(process.cwd(), 'data', 'uploads'), {
+  maxAge: '7d',
+  fallthrough: false,
+}));
 
 // ============================================================
 // 路由

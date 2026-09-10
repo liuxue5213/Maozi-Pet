@@ -49,6 +49,16 @@
 - 排障：60235 僵尸 tsx 进程 N+1 次出现（3 个 tsx watch 并存，旧代码占端口导致首轮冒烟全走旧逻辑）→ pkill 全量 + 干净重启（路线图既定流程）；冒烟脚本 sed 改写把 JSON 引号弄坏致孵化 500 假警报
 - 遗留记录：streak repair（断签复活，Android Police 报道的 Duolingo 限时机制）列为候选；冻结券商店购买（宝石）暂不做——反焦虑定位下保护不商业化
 
+## Run @2026-09-10 09:35-10:00（第 7 轮：社区发帖配图，V2.0 第一项）
+- **竞品依据**：晒宠 UGC + 配图是宠物社区核心（68 款宠物 App 分析，第一夜已录）；Pengu/小红书式图文动态
+- **完成：发帖配图全链路**
+  · `utils/upload.ts`（新，纯函数）：mime 白名单（jpeg/png/webp→扩展名映射防路径注入）、base64 格式+解码体积校验（700KB 上限，JSON 1mb 内）、**帖子 imageUrl 白名单**（只认 `/uploads/<uuid>.<ext>`，封堵此前 createPost 收任意 URL 的外链注入）
+  · `POST /social/upload`（base64 JSON 免新依赖）+ `index.ts` 挂 `/uploads` 静态服务（7d 缓存）+ uuid 文件名；**删帖 best-effort 清理配图文件**
+  · 前端：`expo-image-picker@15.1`（SDK 匹配版，quality 0.6）+ 发帖弹窗 🖼️ 选图/预览/✕ 移除/发布中态；图传失败不阻断发帖（降级纯文本）；PostCard 渲染配图（`staticBaseUrl` = apiBaseUrl 去尾随 /api）
+- **测试**：+5 单测（白名单/mime/体积/路径穿越 `../`/扩展名伪造全拦）→ **135 全绿**；双端 typecheck + Web 构建 ✅；curl 冒烟 8/8（上传→静态 200→mime 拒→超限拒→外链注入拒→发帖带图→feed 回读→删帖文件清理）
+- **协作边界**：并行会话记忆周报 WIP（ai.ts/weekly*/backend package.json）未卷入本提交；upload.test.ts 已入库，其 CI 注册随对方提交 backend/package.json 时一并生效
+- 注：GitHub push 网络间歇不通（443 超时），后台持续重试器已挂，恢复后自动补推 4efcd5c 起的积压
+
 ## Run @2026-09-10 09:10-09:30（第 6 轮：对抗式走查并行会话 R23-R26，零缺陷）
 - **走查范围**：218b8bc 冻结券 / d780dfd 性格外显 / 098787c 行为任务 / bfd2580 记忆翻牌（+1135 行）
 - **逐项走查结论（无需修复项）**：

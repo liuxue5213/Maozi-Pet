@@ -14,10 +14,14 @@ import {
   Platform,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSocialStore, Post } from '../../../store/socialStore';
 import { usePetStore } from '../../../store/petStore';
+import { staticBaseUrl } from '../../../config/env';
+import { apiFetch } from '../../../config/env';
 import { FRAME_RING_COLORS } from '../../../config/appearance';
 
 // ============================================================
@@ -70,6 +74,13 @@ function PostCard({
 
       {/* 内容 */}
       <Text style={styles.postContent}>{post.content}</Text>
+      {post.imageUrl ? (
+        <Image
+          source={{ uri: `${staticBaseUrl}${post.imageUrl}` }}
+          style={styles.postImage}
+          resizeMode="cover"
+        />
+      ) : null}
 
       {/* 互动按钮 */}
       <View style={styles.postActions}>
@@ -194,6 +205,8 @@ export default function SocialScreen() {
   const [showCompose, setShowCompose] = useState(false);
   const [composeText, setComposeText] = useState('');
   const [attachPet, setAttachPet] = useState(false);
+  const [attachImage, setAttachImage] = useState<{ uri: string; base64: string; mime: string } | null>(null);
+  const [publishing, setPublishing] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [showComments, setShowComments] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -217,12 +230,43 @@ export default function SocialScreen() {
     }
   };
 
+  const pickImage = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.6,
+      base64: true,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    const b64 = asset.base64;
+    if (!b64) return;
+    setAttachImage({ uri: asset.uri, base64: b64, mime: asset.mimeType || 'image/jpeg' });
+  };
+
   const handlePublish = async () => {
-    if (!composeText.trim()) return;
-    await createPost(composeText.trim(), attachPet && pet ? pet.id : undefined);
-    setComposeText('');
-    setAttachPet(false);
-    setShowCompose(false);
+    if (!composeText.trim() || publishing) return;
+    setPublishing(true);
+    try {
+      // 先传图拿到本站地址，再发帖（图挂了不阻断发帖，文案仍在）
+      let imageUrl: string | undefined;
+      if (attachImage) {
+        try {
+          imageUrl = await apiFetch<{ url: string }>('/social/upload', {
+            method: 'POST',
+            body: JSON.stringify({ base64: attachImage.base64, mime: attachImage.mime }),
+          }).then(r => r.url);
+        } catch { imageUrl = undefined; }
+      }
+      await createPost(composeText.trim(), attachPet && pet ? pet.id : undefined, imageUrl);
+      setComposeText('');
+      setAttachPet(false);
+      setAttachImage(null);
+      setShowCompose(false);
+    } finally {
+      setPublishing(false);
+    }
   };
 
   const handleDeletePost = async (postId: number) => {
@@ -310,9 +354,9 @@ export default function SocialScreen() {
               <Text style={styles.modalCancel}>取消</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>发布动态</Text>
-            <TouchableOpacity onPress={handlePublish} disabled={!composeText.trim()}>
-              <Text style={[styles.modalPublish, !composeText.trim() && styles.modalPublishDisabled]}>
-                发布
+            <TouchableOpacity onPress={handlePublish} disabled={!composeText.trim() || publishing}>
+              <Text style={[styles.modalPublish, (!composeText.trim() || publishing) && styles.modalPublishDisabled]}>
+                {publishing ? '发布中…' : '发布'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -333,7 +377,20 @@ export default function SocialScreen() {
             />
           </View>
 
+          {attachImage && (
+            <View style={styles.imagePreviewRow}>
+              <View style={styles.imagePreview}>
+                <Image source={{ uri: attachImage.uri }} style={styles.imagePreviewImg} />
+                <TouchableOpacity style={styles.imagePreviewRemove} onPress={() => setAttachImage(null)}>
+                  <Text style={styles.imagePreviewRemoveText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
           <View style={styles.composeFooter}>
+            <TouchableOpacity style={styles.imageAttachBtn} onPress={pickImage}>
+              <Text style={styles.imageAttachText}>🖼️ 配图</Text>
+            </TouchableOpacity>
             {pet && (
               <TouchableOpacity
                 style={[styles.petAttachChip, attachPet && styles.petAttachChipActive]}
@@ -383,6 +440,19 @@ function stageLabel(stage: string): string {
 // ============================================================
 
 const styles = StyleSheet.create({
+  imageAttachBtn: { paddingHorizontal: 10, paddingVertical: 8 },
+  imageAttachText: { fontSize: 13, color: '#8A7A6A', fontWeight: '600' },
+  imagePreviewRow: { paddingHorizontal: 16, marginTop: 10 },
+  imagePreview: { width: 84, height: 84, borderRadius: 10, overflow: 'hidden' },
+  imagePreviewImg: { width: '100%', height: '100%' },
+  imagePreviewRemove: {
+    position: 'absolute', top: 4, right: 4, width: 20, height: 20,
+    borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center',
+  },
+  imagePreviewRemoveText: { color: '#FFF', fontSize: 12 },
+  postImage: {
+    width: '100%', height: 200, borderRadius: 12, marginTop: 10, backgroundColor: '#F5EFE6',
+  },
   container: { flex: 1, backgroundColor: '#FFF5F7' },
   topTabs: {
     flexDirection: 'row',
