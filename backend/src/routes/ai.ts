@@ -10,6 +10,7 @@ import { todayStr } from '../utils/today';
 import { bumpTaskProgress } from '../utils/tasks';
 import { extractFacts } from '../utils/memory';
 import { isMessageFromToday, buildRecallInstruction, buildLocalRecallReply } from '../utils/recall';
+import { pickWeekMemories, buildWeeklyShareText } from '../utils/weekly';
 
 export const aiRouter = Router();
 
@@ -240,6 +241,34 @@ aiRouter.get('/memories/:petId', authMiddleware, (req: Request, res: Response) =
   `).all(userId, petId, limit);
 
   res.json({ memories: rows });
+});
+
+// --- 每周记忆摘要（滚动 7 天，宠物口吻分享文案；QQ宠物记忆周报对标） ---
+aiRouter.get('/memories/:petId/weekly', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { petId } = req.params;
+
+  const pet = db.prepare('SELECT id, name FROM pets WHERE id = ? AND user_id = ?').get(petId, userId) as any;
+  if (!pet) {
+    res.status(404).json({ error: '宠物不存在' });
+    return;
+  }
+
+  const memories = db.prepare(`
+    SELECT content, created_at FROM pet_memories
+    WHERE user_id = ? AND pet_id = ?
+  `).all(userId, petId) as any[];
+
+  const now = new Date();
+  const items = pickWeekMemories(memories, now);
+
+  res.json({
+    petName: pet.name,
+    total: memories.length,
+    weeklyCount: items.length,
+    items,
+    shareText: buildWeeklyShareText(pet.name, items, now),
+  });
 });
 
 // --- 导出记忆（可带走的信任特性：AI 停服恐慌事件的正面回应） ---
