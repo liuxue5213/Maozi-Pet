@@ -46,6 +46,7 @@ export default function ProfileScreen() {
   const [quietStart, setQuietStart] = useState('');
   const [quietEnd, setQuietEnd] = useState('');
   const [quietSaving, setQuietSaving] = useState(false);
+  const [remindHour, setRemindHour] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -375,6 +376,29 @@ export default function ProfileScreen() {
         <TouchableOpacity onPress={handleClearQuietHours}>
           <Text style={styles.quietClear}>清除免打扰设置</Text>
         </TouchableOpacity>
+
+        <Text style={styles.settingsTitle}>🌱 习惯提醒时段</Text>
+        <Text style={styles.quietHint}>每天在这个整点前后提醒打卡（留空 = 默认 18~22 点智能窗口）</Text>
+        <View style={styles.quietRow}>
+          <TextInput
+            style={styles.quietInput}
+            value={remindHour}
+            onChangeText={setRemindHour}
+            placeholder="如 9 或 21"
+            placeholderTextColor="#CCC"
+            keyboardType="number-pad"
+            maxLength={2}
+          />
+          <Text style={styles.quietTilde}>点</Text>
+          <TouchableOpacity style={styles.quietSaveBtn} onPress={handleSaveQuietHours} disabled={quietSaving}>
+            <Text style={styles.quietSaveText}>{quietSaving ? '...' : '保存'}</Text>
+          </TouchableOpacity>
+          {remindHour !== '' && (
+            <TouchableOpacity onPress={() => setRemindHour('')}>
+              <Text style={styles.quietClear}>默认</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* 账号类型 */}

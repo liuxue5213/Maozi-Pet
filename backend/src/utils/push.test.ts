@@ -47,7 +47,7 @@ test('parseQuietTime：合法 HH:MM 原样返回，其余 null', () => {
 });
 
 // === Round 19：习惯打卡提醒 ===
-import { isHabitRemindWindow, pickHabitReminder, habitReminderCopy, HABIT_REMIND_START_HOUR, HABIT_REMIND_END_HOUR } from './push';
+import { isHabitRemindWindow, pickHabitReminder, habitReminderCopy, habitRemindWindowForUser, HABIT_REMIND_START_HOUR, HABIT_REMIND_END_HOUR } from './push';
 
 test('习惯提醒窗口：18:00 含、22:00 不含', () => {
   assert.strictEqual(isHabitRemindWindow(at(18, 0)), true);
@@ -90,4 +90,17 @@ test('habitReminderCopy：streak≥2 宠物口吻带天数；streak=1 正向开�
   assert.ok(b.title.includes('好头') && !b.body.includes('连续'));
   const c = habitReminderCopy('读书', 9, null);
   assert.ok(!c.body.includes('undefined') && c.body.includes('9 天'));
+});
+
+
+test('habitRemindWindowForUser：自定义 9 点 → 9 点段命中；未设置回退 18-22 默认', () => {
+  const nine = at(9, 30);
+  assert.strictEqual(habitRemindWindowForUser(9, nine), true);
+  assert.strictEqual(habitRemindWindowForUser(10, nine), false);
+  // 未设置（null/undefined/非法）→ 回退默认 18-22
+  assert.strictEqual(habitRemindWindowForUser(null, nine), false);
+  assert.strictEqual(habitRemindWindowForUser(null, at(19, 0)), true);
+  assert.strictEqual(habitRemindWindowForUser(undefined, at(19, 0)), true);
+  assert.strictEqual(habitRemindWindowForUser(99, at(19, 0)), true);
+  assert.strictEqual(habitRemindWindowForUser(99, nine), false);
 });

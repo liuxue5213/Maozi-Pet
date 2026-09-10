@@ -197,6 +197,14 @@ export interface HabitReminderCandidate {
   checkedToday: boolean;
 }
 
+/** 用户的习惯提醒窗口：自定义小时 [h, h+1)；未设置/非法则回退默认 18-22 点 */
+export function habitRemindWindowForUser(customHour: number | null | undefined, now: Date): boolean {
+  if (customHour === null || customHour === undefined) return isHabitRemindWindow(now);
+  const h = Math.floor(customHour);
+  if (!Number.isInteger(h) || h < 0 || h > 23) return isHabitRemindWindow(now);
+  return now.getHours() === h;
+}
+
 /** 挑最该提醒的习惯：今天没打 + streak ≥ 1（已开头的才值得守护）→ streak 最高优先 */
 export function pickHabitReminder(cands: HabitReminderCandidate[]): HabitReminderCandidate | null {
   const due = cands.filter(c => !c.checkedToday && c.streak >= 1);
@@ -234,17 +242,18 @@ interface HabitReminderTarget {
 /** 扫描习惯提醒目标：有令牌、不在免打扰时段、窗口内、当日未提醒过的用户（≤1 条/人/日） */
 function collectHabitReminderPushes(now: Date = new Date()): HabitReminderTarget[] {
   const today = todayStr();
-  if (!isHabitRemindWindow(now)) return [];
 
   const tokenRows = db.prepare(`
     SELECT pt.user_id AS userId, pt.token,
-           u.push_quiet_start AS quietStart, u.push_quiet_end AS quietEnd
+           u.push_quiet_start AS quietStart, u.push_quiet_end AS quietEnd,
+           u.habit_remind_hour AS remindHour
     FROM push_tokens pt JOIN users u ON u.id = pt.user_id
   `).all() as any[];
 
   const targets: HabitReminderTarget[] = [];
   for (const row of tokenRows) {
     if (isWithinQuietHours(now, row.quietStart, row.quietEnd)) continue;
+    if (!habitRemindWindowForUser(row.remindHour, now)) continue;
 
     // 每用户每日最多 1 条习惯提醒（push_sent 以 habit_id 入 pet_id 槽、kind='habit'）
     const reminded = db.prepare(`

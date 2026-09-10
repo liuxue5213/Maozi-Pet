@@ -489,6 +489,9 @@ ensureColumn('item_defs', 'currency', "currency TEXT NOT NULL DEFAULT 'coin'");
 // 习惯 streak 里程碑（Round 18）：每个习惯已发放过经验的里程碑天数（'3,7'），防断签重爬刷经验
 ensureColumn('user_habits', 'awarded_milestones', "awarded_milestones TEXT NOT NULL DEFAULT ''");
 
+// 打卡提醒自定义时段（Round 21）：0-23 整点；NULL = 默认 18-22 点窗口
+ensureColumn('users', 'habit_remind_hour', 'habit_remind_hour INTEGER');
+
 // 习惯 streak 冻结券（Round 23，Duolingo streak freeze 对标）：漏打 1 天自动桥接保护连续记录。
 // 存量/新建习惯默认带 1 张（第 2 周弃用高峰的对症保护），里程碑 7/14/21 天各 +1，上限 2 张
 ensureColumn('user_habits', 'freezes', 'freezes INTEGER NOT NULL DEFAULT 1');

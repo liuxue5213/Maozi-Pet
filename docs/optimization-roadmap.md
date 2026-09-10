@@ -55,6 +55,13 @@
 - **141 单测全绿** + 双端 typecheck + Web 构建 + 服务器 buildSha 同步
 - 至此本周期功能面收官：今夜（第 18-20 轮）+ 日间（第 7-17 轮）共 14 轮交付，剩余时段进入低频守护（每小时健康检查 + 推送重试），06:00 做最终收官总结
 
+## Run @2026-09-10 22:40-23:00（第 21 轮：打卡提醒时间自定义）
+- **产品逻辑**：R19 的固定 18-22 点窗口是「猜用户」，本轮把选择权交给用户（早起的养成人 9 点就想被提醒）
+- **完成**：`users.habit_remind_hour` 列（0-23 整点，NULL=默认智能窗口）；`habitRemindWindowForUser` 纯函数（自定义则命中 [h, h+1) 单小时）；collect 逐用户判定窗口（替换全局早退）；`GET/POST /push/settings` 带 habitRemindHour——**语义细节：仅显式携带该字段才更新**，旧客户端只存免打扰不会悄悄重置用户的提醒设置；非法值归一为默认
+- **前端**：profile 推送卡片新增「🌱 习惯提醒时段」输入（留空=默认，一键回默认）
+- **测试**：+1 单测（自定义单小时窗口/回退/非法归一）→ 142 全绿；冒烟 5/5（设置/隔离保存/回读/null 恢复默认/非法归一）；双端 typecheck ✅
+- 随推送上线
+
 ## Run @2026-09-10 21:45-22:20（第 19 轮：AI 聊天感知现实习惯 + 抓到早退守卫缺陷）
 - **完成：AI 聊天注入习惯上下文**——chat 路由组装「主人的现实习惯」块（每个习惯：名称 + 冻结桥接口径 streak + 今日打卡状态），注入 buildSystemPrompt；反焦虑口径写进 prompt（只温柔提起，绝不催促责备）。宠物从此知道「你今天喝水了没」，聊天即可自然关心
 - **🪲 冒烟抓到 1 个真缺陷并修复**：buildSystemPrompt 开头的早退守卫 `if(!petState && memories.length===0 && !recallInstruction) return base;` 会把新用户（无记忆、请求未带 petState）的**习惯块整个吞掉**（实测 systemPrompt 仅 163 字）。修复：守卫条件补 `&& !habitContext`。排障方法论：DEBUG_PROMPT=1 临时日志打印 habitContext/systemPrompt/fnSrc 三件套 → 运行时函数源码暴露早退分支（期间还揪出 60235 僵尸进程 EADDRINUSE 竞态：kill 后未等端口释放即启动，一律 kill -9 + sleep 2 + 端口确认）

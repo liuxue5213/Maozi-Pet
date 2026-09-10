@@ -13,8 +13,12 @@ export const pushRouter = Router();
 // 免打扰时段：查看 / 设置（"HH:MM" 起止，传 null 清除；start > end = 跨零点窗口）
 pushRouter.get('/settings', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
-  const row = db.prepare('SELECT push_quiet_start, push_quiet_end FROM users WHERE id = ?').get(userId) as any;
-  res.json({ quietStart: row?.push_quiet_start || null, quietEnd: row?.push_quiet_end || null });
+  const row = db.prepare('SELECT push_quiet_start, push_quiet_end, habit_remind_hour FROM users WHERE id = ?').get(userId) as any;
+  res.json({
+    quietStart: row?.push_quiet_start || null,
+    quietEnd: row?.push_quiet_end || null,
+    habitRemindHour: row?.habit_remind_hour ?? null,
+  });
 });
 
 pushRouter.post('/settings', authMiddleware, (req: Request, res: Response) => {
@@ -27,13 +31,34 @@ pushRouter.post('/settings', authMiddleware, (req: Request, res: Response) => {
   const effectiveStart = start && end ? start : null;
   const effectiveEnd = start && end ? end : null;
 
-  db.prepare('UPDATE users SET push_quiet_start = ?, push_quiet_end = ? WHERE id = ?')
-    .run(effectiveStart, effectiveEnd, userId);
+  // 习惯提醒自定义整点：仅在请求显式携带该字段时更新（null/空 = 恢复默认 18-22 点），
+  // 避免只保存免打扰时段的旧客户端把用户已设的提醒小时悄悄重置
+  let remindHour: number | null | undefined;
+  if (req.body && 'habitRemindHour' in req.body) {
+    const remindHourRaw = req.body.habitRemindHour;
+    if (remindHourRaw !== null && remindHourRaw !== undefined && remindHourRaw !== '') {
+      const h = Math.floor(Number(remindHourRaw));
+      remindHour = Number.isInteger(h) && h >= 0 && h <= 23 ? h : null;
+    } else {
+      remindHour = null;
+    }
+  }
 
+  if (remindHour === undefined) {
+    db.prepare('UPDATE users SET push_quiet_start = ?, push_quiet_end = ? WHERE id = ?')
+      .run(effectiveStart, effectiveEnd, userId);
+    remindHour = (db.prepare('SELECT habit_remind_hour FROM users WHERE id = ?').get(userId) as any)?.habit_remind_hour ?? null;
+  } else {
+    db.prepare('UPDATE users SET push_quiet_start = ?, push_quiet_end = ?, habit_remind_hour = ? WHERE id = ?')
+      .run(effectiveStart, effectiveEnd, remindHour, userId);
+  }
+
+  const remindMsg = remindHour !== null ? `；🌱 习惯提醒：每天 ${String(remindHour).padStart(2, '0')}:00 前后` : '';
   res.json({
-    message: effectiveStart ? `🌙 免打扰时段已设为 ${effectiveStart} ~ ${effectiveEnd}` : '免打扰已关闭，帽子随时可以找你',
+    message: (effectiveStart ? `🌙 免打扰时段已设为 ${effectiveStart} ~ ${effectiveEnd}` : '免打扰已关闭，帽子随时可以找你') + remindMsg,
     quietStart: effectiveStart,
     quietEnd: effectiveEnd,
+    habitRemindHour: remindHour,
   });
 });
 
