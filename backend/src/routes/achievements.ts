@@ -41,6 +41,10 @@ function collectMetrics(userId: string): AchievementMetrics {
     adultPets: one(`SELECT COUNT(*) as v FROM pets WHERE user_id = ? AND stage = 'adult'`, userId),
     retiredPets: one(`SELECT COUNT(*) as v FROM pets WHERE user_id = ? AND is_retired = 1`, userId),
     habitStreak,
+    // 小游戏与收集（Round 16）
+    memoryWins: one(`SELECT COALESCE(SUM(win_count), 0) as v FROM memory_daily WHERE user_id = ?`, userId),
+    moleGames: one(`SELECT COALESCE(SUM(game_count), 0) as v FROM mole_daily WHERE user_id = ?`, userId),
+    memories: one(`SELECT COUNT(*) as v FROM pet_memories WHERE user_id = ?`, userId),
   };
 }
 

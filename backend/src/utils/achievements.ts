@@ -37,6 +37,10 @@ export const ACHIEVEMENT_DEFS: AchievementDef[] = [
   { id: 'habit_7', title: '七日之燃', description: '任意习惯连续打卡 7 天', icon: '🔥', metric: 'habitStreak', threshold: 7 },
   { id: 'habit_14', title: '十四日星辰', description: '任意习惯连续打卡 14 天', icon: '🌟', metric: 'habitStreak', threshold: 14 },
   { id: 'habit_21', title: '廿一日之冠', description: '任意习惯连续打卡 21 天', icon: '👑', metric: 'habitStreak', threshold: 21 },
+  // 小游戏与收集维度（Round 16：钻石上限 85→100，正好覆盖三件钻石限定）
+  { id: 'memory_first', title: '过目不忘', description: '第一次通关记忆翻牌', icon: '🃏', metric: 'memoryWins', threshold: 1 },
+  { id: 'mole_first', title: '地鼠克星', description: '第一次玩打地鼠', icon: '🔨', metric: 'moleGames', threshold: 1 },
+  { id: 'collector_20', title: '记忆收藏家', description: '宠物记下关于你的 20 件事', icon: '🧠', metric: 'memories', threshold: 20 },
 ];
 
 const DEF_BY_METRIC = new Map<string, AchievementDef[]>();
