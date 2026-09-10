@@ -19,6 +19,10 @@ import {
   guessWinCoins, isGuessNumber, newSecret,
   GUESS_MAX_ATTEMPTS, GUESS_MAX_GAMES_PER_DAY,
 } from '../utils/guess';
+import {
+  newBoard, isValidFlipIndex, flipCoins, getMemoryStartMessage, getMemoryWinMessage,
+  MEMORY_MAX_GAMES_PER_DAY,
+} from '../utils/flip';
 import { applyExp } from '../utils/growth';
 
 export const petRouter = Router();
@@ -842,6 +846,238 @@ petRouter.post('/:petId/guess', authMiddleware, (req: Request, res: Response) =>
   });
 });
 
+// ============================================================
+// 记忆翻牌（第三款小游戏，Pou 多小游戏矩阵对标）
+// 桌面服务端存底防作弊；全配对才算赢，慢了只少拿金币不惩罚
+// ============================================================
+
+// 开局（有进行中的局则原样续玩，不重复扣每日局数）
+petRouter.post('/:petId/memory/start', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { petId } = req.params;
+
+  const row = db.prepare('SELECT * FROM pets WHERE id = ? AND user_id = ?').get(petId, userId) as PetRow | undefined;
+  if (!row) {
+    res.status(404).json({ error: '宠物不存在' });
+    return;
+  }
+  if (row.is_retired) {
+    res.status(400).json({ error: '退休的帽子要安心养老啦' });
+    return;
+  }
+  if (row.stage === 'egg') {
+    res.status(400).json({ error: '蛋蛋还抓不住卡片，先孵化吧~' });
+    return;
+  }
+  if (row.is_sleeping) {
+    res.status(400).json({ error: `${row.name} 睡着啦，别吵醒它翻牌啦 🌙` });
+    return;
+  }
+
+  const today = todayStr();
+
+  // 续玩进行中的局（按宠物过滤：退休/换宠物后旧局不可续）——只回配对进度，不回桌面防作弊
+  const active = db.prepare(
+    "SELECT id, flips, matched FROM memory_sessions WHERE user_id = ? AND pet_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1"
+  ).get(userId, petId) as any;
+  if (active) {
+    res.json({
+      sessionId: active.id,
+      matched: JSON.parse(active.matched || '[]'),
+      flips: active.flips,
+      resumed: true,
+      message: '上一局还没翻完，继续！',
+    });
+    return;
+  }
+
+  // 每日局数上限（事务内判定 + 写入，防并发刷局）
+  let capped = false;
+  transaction((tx) => {
+    const daily = tx.prepare('SELECT game_count FROM memory_daily WHERE user_id = ? AND game_date = ?').get(userId, today) as any;
+    if ((daily?.game_count || 0) >= MEMORY_MAX_GAMES_PER_DAY) {
+      capped = true;
+      return;
+    }
+    tx.prepare(`
+      INSERT INTO memory_sessions (user_id, pet_id, board, matched, flips, first_index, status, created_at, updated_at)
+      VALUES (?, ?, ?, '[]', 0, NULL, 'active', ?, ?)
+    `).run(userId, petId, JSON.stringify(newBoard()), new Date().toISOString(), new Date().toISOString());
+  });
+
+  if (capped) {
+    res.status(400).json({ error: `今天翻牌翻够了，明天再来吧（每日 ${MEMORY_MAX_GAMES_PER_DAY} 局）` });
+    return;
+  }
+
+  const session = db.prepare(
+    "SELECT id, flips FROM memory_sessions WHERE user_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1"
+  ).get(userId) as any;
+
+  res.json({
+    sessionId: session.id,
+    matched: [],
+    flips: 0,
+    resumed: false,
+    message: getMemoryStartMessage(row.name),
+  });
+});
+
+// 翻一张（第一翻亮面，第二翻判配对；全配对即结算）
+petRouter.post('/:petId/memory/flip', authMiddleware, (req: Request, res: Response) => {
+  const userId = getCurrentUserId(req);
+  const { petId } = req.params;
+  const { sessionId, index } = req.body;
+
+  if (!isValidFlipIndex(index)) {
+    res.status(400).json({ error: '要翻 0~7 号卡片哦' });
+    return;
+  }
+
+  const row = db.prepare('SELECT * FROM pets WHERE id = ? AND user_id = ?').get(petId, userId) as PetRow | undefined;
+  if (!row) {
+    res.status(404).json({ error: '宠物不存在' });
+    return;
+  }
+  if (row.is_retired) {
+    res.status(400).json({ error: '退休的帽子要安心养老啦' });
+    return;
+  }
+  if (row.is_sleeping) {
+    res.status(400).json({ error: `${row.name} 睡着啦，先叫醒它吧 🌙` });
+    return;
+  }
+
+  const session = db.prepare(
+    'SELECT * FROM memory_sessions WHERE id = ? AND user_id = ? AND pet_id = ?'
+  ).get(sessionId, userId, petId) as any;
+  if (!session) {
+    res.status(404).json({ error: '对局不存在，重新开局吧' });
+    return;
+  }
+  if (session.status !== 'active') {
+    res.status(400).json({ error: '这一局已经结束了，开新一局吧' });
+    return;
+  }
+
+  const board: string[] = JSON.parse(session.board);
+  const matched: number[] = JSON.parse(session.matched || '[]');
+  if (matched.includes(index)) {
+    res.status(400).json({ error: '这张已经配对成功啦，翻别的吧' });
+    return;
+  }
+
+  // 第一翻：亮面并记住位置
+  if (session.first_index === null || session.first_index === undefined) {
+    db.prepare('UPDATE memory_sessions SET flips = flips + 1, first_index = ?, updated_at = ? WHERE id = ?')
+      .run(index, new Date().toISOString(), session.id);
+    res.json({
+      result: 'reveal',
+      firstIndex: index,
+      emoji: board[index],
+      flips: session.flips + 1,
+      matched,
+    });
+    return;
+  }
+
+  // 第二翻
+  if (index === session.first_index) {
+    res.status(400).json({ error: '这张已经翻开了，翻另一张吧' });
+    return;
+  }
+
+  const firstIndex = session.first_index;
+  const flips = session.flips + 2;
+  const isMatch = board[firstIndex] === board[index];
+  const newMatched = isMatch ? [...matched, firstIndex, index] : matched;
+  const completed = newMatched.length === board.length;
+  const now = new Date().toISOString();
+
+  // 未完成：只记录进度（miss 不扣任何东西，低压力）
+  if (!completed) {
+    db.prepare('UPDATE memory_sessions SET flips = ?, matched = ?, first_index = NULL, updated_at = ? WHERE id = ?')
+      .run(flips, JSON.stringify(newMatched), now, session.id);
+    res.json({
+      result: isMatch ? 'matched' : 'miss',
+      indices: [firstIndex, index],
+      emojis: [board[firstIndex], board[index]],
+      matched: newMatched,
+      flips,
+      message: isMatch ? `✨ 配对成功！${row.name}给你鼓掌` : `💭 没配上也没关系，记住位置再来`,
+    });
+    return;
+  }
+
+  // 全配对结算：+心情 +金币（共享每日 200 预算）+ 成长，无失败态
+  const pet = rowToPet(row);
+  const stats = { ...pet.stats };
+  stats.mood = Math.min(100, stats.mood + 5);
+  stats.energy = Math.max(10, stats.energy - 3);
+  let petOut = { ...pet, stats, totalInteractions: pet.totalInteractions + 1 };
+  petOut = checkGrowth(petOut).pet;
+  petOut.updatedAt = now;
+
+  const updates = petToDb(petOut);
+  let coinReward = 0;
+  transaction((tx) => {
+    const dailyRecord = tx.prepare('SELECT coins_earned FROM daily_interactions WHERE user_id = ? AND interaction_date = ?').get(userId, todayStr()) as any;
+    const currentCoins = dailyRecord?.coins_earned || 0;
+    if (currentCoins < MAX_COINS_PER_DAY) {
+      coinReward = Math.min(flipCoins(flips), MAX_COINS_PER_DAY - currentCoins);
+    }
+
+    tx.prepare(`
+      UPDATE pets SET
+        stats_hunger = ?, stats_cleanliness = ?, stats_mood = ?,
+        stats_energy = ?, stats_health = ?, level = ?, exp = ?, stage = ?,
+        total_interactions = ?, updated_at = ?
+      WHERE id = ?
+    `).run(updates.stats_hunger, updates.stats_cleanliness, updates.stats_mood,
+           updates.stats_energy, updates.stats_health, petOut.level, petOut.exp,
+           petOut.stage, petOut.totalInteractions, petOut.updatedAt, petId);
+
+    if (coinReward > 0) {
+      tx.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(coinReward, userId);
+      const dailyRow = tx.prepare('SELECT id FROM daily_interactions WHERE user_id = ? AND interaction_date = ?').get(userId, todayStr()) as any;
+      if (dailyRow) {
+        tx.prepare('UPDATE daily_interactions SET coins_earned = coins_earned + ? WHERE id = ?').run(coinReward, dailyRow.id);
+      } else {
+        tx.prepare('INSERT INTO daily_interactions (user_id, interaction_date, count, coins_earned) VALUES (?, ?, 0, ?)').run(userId, todayStr(), coinReward);
+      }
+    }
+
+    tx.prepare("UPDATE memory_sessions SET status = 'won', flips = ?, matched = ?, first_index = NULL, updated_at = ? WHERE id = ?")
+      .run(flips, JSON.stringify(newMatched), now, session.id);
+
+    tx.prepare(`
+      INSERT INTO memory_daily (user_id, game_date, game_count, win_count)
+      VALUES (?, ?, 1, 1)
+      ON CONFLICT(user_id, game_date)
+      DO UPDATE SET game_count = game_count + 1, win_count = win_count + 1
+    `).run(userId, todayStr());
+  });
+
+  bumpTaskProgress(userId, 'interact3');
+
+  let message = getMemoryWinMessage(row.name, flips);
+  if (petOut.level > pet.level) message += ` ⬆️ 升级到 Lv.${petOut.level}！`;
+  if (coinReward > 0) message += ` 🪙+${coinReward}`;
+  const userCoins = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any)?.coins || 0;
+
+  res.json({
+    result: 'completed',
+    indices: [firstIndex, index],
+    emojis: [board[firstIndex], board[index]],
+    matched: newMatched,
+    flips,
+    pet: petOut,
+    coinReward,
+    totalCoins: userCoins,
+    message,
+  });
+});
+
 // 退休宠物
 petRouter.post('/:petId/retire', authMiddleware, (req: Request, res: Response) => {
   const userId = getCurrentUserId(req);
@@ -861,6 +1097,8 @@ petRouter.post('/:petId/retire', authMiddleware, (req: Request, res: Response) =
   db.prepare('UPDATE pets SET is_retired = 1, is_sleeping = 0, sleep_started_at = NULL, updated_at = ? WHERE id = ?').run(new Date().toISOString(), petId);
   // 清掉该宠物未完成的猜数字局（否则 resign 后无法再开局）
   db.prepare("UPDATE guess_sessions SET status = 'abandoned', updated_at = ? WHERE pet_id = ? AND status = 'active'").run(new Date().toISOString(), petId);
+  // 翻牌局同理清理
+  db.prepare("UPDATE memory_sessions SET status = 'abandoned', updated_at = ? WHERE pet_id = ? AND status = 'active'").run(new Date().toISOString(), petId);
 
   res.json({
     message: `🌟 ${row.name} 光荣退休，已入驻宠物图鉴档案馆！可以孵化新宠物啦~`,

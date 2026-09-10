@@ -477,6 +477,199 @@ function GuessModal({
   );
 }
 
+// 记忆翻牌小游戏弹窗（第三款：8 张卡片找 4 对；桌面服务端存底防作弊，慢了少拿金币不惩罚）
+function MemoryModal({
+  visible,
+  onClose,
+  petName,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  petName: string;
+}) {
+  const [game, setGame] = useState<{
+    sessionId: number;
+    matched: number[];
+    flips: number;
+    firstIndex: number | null;
+    faces: Record<number, string>;
+    finished: boolean;
+    history: { text: string; type: 'info' }[];
+  } | null>(null);
+  const [missVisible, setMissVisible] = useState<number[]>([]);
+  const [missFaces, setMissFaces] = useState<Record<number, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const petId = usePetStore.getState().pet?.id;
+
+  const startGame = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await apiFetch<{
+        sessionId: number; matched: number[]; flips: number; resumed: boolean; message: string;
+      }>(`/pet/${petId}/memory/start`, { method: 'POST' });
+      setGame({
+        sessionId: result.sessionId,
+        matched: result.matched,
+        flips: result.flips,
+        firstIndex: null,
+        faces: {},
+        finished: false,
+        history: [{ text: result.message, type: 'info' }],
+      });
+      setMissVisible([]);
+      setMissFaces({});
+    } catch (err: any) {
+      setError(err.message || '开局失败，再试一次喵');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (visible && !game) startGame();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const handleFlip = async (index: number) => {
+    if (!game || busy || game.finished) return;
+    if (game.matched.includes(index) || index === game.firstIndex) return;
+    setBusy(true);
+    setError('');
+    setMissVisible([]);
+    setMissFaces({});
+    try {
+      const result = await apiFetch<{
+        result: 'reveal' | 'matched' | 'miss' | 'completed';
+        firstIndex?: number;
+        indices?: number[];
+        emoji?: string;
+        emojis?: string[];
+        matched?: number[];
+        flips?: number;
+        pet?: any;
+        coinReward?: number;
+        totalCoins?: number;
+        message?: string;
+      }>(`/pet/${petId}/memory/flip`, {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: game.sessionId, index }),
+      });
+
+      if (result.result === 'reveal') {
+        setGame(g => g ? {
+          ...g,
+          firstIndex: result.firstIndex ?? null,
+          flips: result.flips ?? g.flips,
+          faces: { ...g.faces, [index]: result.emoji! },
+        } : g);
+      } else if (result.result === 'completed') {
+        setGame(g => g ? {
+          ...g,
+          firstIndex: null,
+          matched: result.matched ?? g.matched,
+          flips: result.flips ?? g.flips,
+          faces: { ...g.faces, [result.indices![0]]: result.emojis![0], [result.indices![1]]: result.emojis![1] },
+          finished: true,
+          history: [...g.history, { text: result.message ?? '全部配对成功！', type: 'info' }],
+        } : g);
+        if (typeof result.totalCoins === 'number') usePetStore.getState().updateCoins(result.totalCoins);
+        await usePetStore.getState().fetchPet();
+      } else { // matched | miss
+        setGame(g => g ? {
+          ...g,
+          firstIndex: null,
+          matched: result.matched ?? g.matched,
+          flips: result.flips ?? g.flips,
+          faces: { ...g.faces, [result.indices![0]]: result.emojis![0], [result.indices![1]]: result.emojis![1] },
+          history: [...g.history, { text: result.message ?? '', type: 'info' }],
+        } : g);
+        if (result.result === 'miss') {
+          // miss 的两张短暂可见，下次翻牌时盖回（不进 faces 永久缓存）
+          setMissVisible(result.indices ?? []);
+          setMissFaces({ [result.indices![0]]: result.emojis![0], [result.indices![1]]: result.emojis![1] });
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || '出错了，再试一次喵');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleClose = () => {
+    setGame(null);
+    setMissVisible([]);
+    setMissFaces({});
+    setError('');
+    onClose();
+  };
+
+  const isFaceUp = (i: number) =>
+    !!game && (game.matched.includes(i) || i === game.firstIndex || missVisible.includes(i));
+  const faceAt = (i: number) =>
+    missVisible.includes(i) ? missFaces[i] : game?.faces[i];
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+      <View style={styles.rpsContainer}>
+        <View style={styles.rpsHeader}>
+          <Text style={styles.rpsTitle}>🃏 和{petName}玩记忆翻牌</Text>
+          <TouchableOpacity onPress={handleClose}>
+            <Text style={styles.rpsClose}>✕</Text>
+          </TouchableOpacity>
+        </View>
+
+        {!game && (
+          <View style={styles.guessHistory}>
+            <Text style={styles.guessHistoryText}>{error || '正在开局…'}</Text>
+            <TouchableOpacity style={[styles.guessBtn, styles.guessRetryBtn]} onPress={startGame} disabled={busy}>
+              <Text style={styles.guessBtnText}>{busy ? '...' : '🔄 重试'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {game && (
+          <>
+            <View style={styles.memoryGrid}>
+              {Array.from({ length: 8 }, (_, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.memoryCard, game.matched.includes(i) && styles.memoryCardMatched]}
+                  onPress={() => handleFlip(i)}
+                  disabled={busy || game.finished || game.matched.includes(i)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.memoryCardText}>{isFaceUp(i) ? faceAt(i) ?? '🂠' : '❓'}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.guessHistory}>
+              {game.history.slice(-3).map((h, i) => (
+                <Text key={i} style={styles.guessHistoryText}>{h.text}</Text>
+              ))}
+              {error.length > 0 && <Text style={styles.rpsError}>{error}</Text>}
+            </View>
+
+            {game.finished ? (
+              <TouchableOpacity style={styles.guessBtn} onPress={startGame} disabled={busy}>
+                <Text style={styles.guessBtnText}>{busy ? '...' : '🔄 再来一局'}</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.guessAttempts}>已翻 {game.flips} 次 · 配对 {game.matched.length / 2}/4</Text>
+            )}
+
+            <Text style={styles.rpsRule}>全配对 +🪙10~20（越少翻牌越多）· 完成 +心情 · 每日 5 局</Text>
+          </>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
 // ============================================================
 // 主页面
 // ============================================================
@@ -497,6 +690,7 @@ export default function HomeScreen() {
   const [tasks, setTasks] = useState<DailyTask[]>([]);
   const [rpsVisible, setRpsVisible] = useState(false);
   const [guessVisible, setGuessVisible] = useState(false);
+  const [memoryVisible, setMemoryVisible] = useState(false);
   const [retireVisible, setRetireVisible] = useState(false);
   const [retireBusy, setRetireBusy] = useState(false);
   const eventAttempted = useRef(false); // 每次进入 app 只尝试拉取一次随机事件
@@ -708,6 +902,10 @@ export default function HomeScreen() {
               <Text style={styles.actionIcon}>🔢</Text>
               <Text style={styles.actionLabel}>猜数字</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.actionBtn} onPress={() => setMemoryVisible(true)} activeOpacity={0.7}>
+              <Text style={styles.actionIcon}>🃏</Text>
+              <Text style={styles.actionLabel}>翻翻乐</Text>
+            </TouchableOpacity>
           </>
         )}
         {/* 作息入口：哄睡 / 叫醒（蛋不需要睡觉） */}
@@ -734,6 +932,13 @@ export default function HomeScreen() {
       <GuessModal
         visible={guessVisible}
         onClose={() => setGuessVisible(false)}
+        petName={pet.name}
+      />
+
+      {/* 记忆翻牌小游戏 */}
+      <MemoryModal
+        visible={memoryVisible}
+        onClose={() => setMemoryVisible(false)}
         petName={pet.name}
       />
 
@@ -889,6 +1094,13 @@ const styles = StyleSheet.create({
   stageTagText: { fontSize: 12, fontWeight: '600', color: '#FFF' },
   personalityTag: { backgroundColor: '#FFE8D2', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   personalityTagText: { fontSize: 12, fontWeight: '600', color: '#B07840' },
+  memoryGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10, marginTop: 16 },
+  memoryCard: {
+    width: 72, height: 88, borderRadius: 12, backgroundColor: '#FF9F43',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  memoryCardMatched: { backgroundColor: '#D8E8D8', opacity: 0.7 },
+  memoryCardText: { fontSize: 34 },
   eventBanner: {
     backgroundColor: '#FFF9E6',
     borderColor: '#FECA57',

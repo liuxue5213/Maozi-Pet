@@ -382,6 +382,31 @@ db.exec(`
     PRIMARY KEY (user_id, game_date)
   );
 
+  -- 记忆翻牌：对局（board 服务端存底防作弊，matched 为已配对的下标 JSON 数组）
+  CREATE TABLE IF NOT EXISTS memory_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    pet_id TEXT NOT NULL,
+    board TEXT NOT NULL,
+    matched TEXT NOT NULL DEFAULT '[]',
+    flips INTEGER NOT NULL DEFAULT 0,
+    first_index INTEGER,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_memory_sessions_user_status ON memory_sessions(user_id, status);
+
+  -- 记忆翻牌：每日局数统计
+  CREATE TABLE IF NOT EXISTS memory_daily (
+    user_id TEXT NOT NULL,
+    game_date TEXT NOT NULL,
+    game_count INTEGER NOT NULL DEFAULT 0,
+    win_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, game_date)
+  );
+
   -- 习惯打卡：现实习惯 + 每日打卡记录（软删除 archived 保留历史 streak 口径）
   CREATE TABLE IF NOT EXISTS user_habits (
     id TEXT PRIMARY KEY,
