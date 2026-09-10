@@ -17,14 +17,9 @@ import { Alert } from 'react-native';
 import { usePetStore, Personality } from '../store/petStore';
 import { useInventoryStore } from '../store/inventoryStore';
 import { apiFetch } from '../config/env';
+import { PERSONALITY_OPTIONS } from '../config/personalities';
 
-const PERSONALITIES: { key: Personality; emoji: string; label: string; desc: string }[] = [
-  { key: 'cute', emoji: '🧸', label: '软萌治愈', desc: '软糯黏人，满嘴撒娇' },
-  { key: 'tsundere', emoji: '😤', label: '傲娇毒舌', desc: '嘴上不饶人，心里全是爱' },
-  { key: 'funny', emoji: '🤪', label: '沙雕活泼', desc: '满脑子骚操作，快乐制造机' },
-  { key: 'calm', emoji: '🌸', label: '温柔安静', desc: '轻声细语，治愈系陪伴' },
-  { key: 'cool', emoji: '😎', label: '高冷佛系', desc: '话不多但每句都是金句' },
-];
+const PERSONALITIES = PERSONALITY_OPTIONS;
 
 export default function OnboardingScreen() {
   const router = useRouter();

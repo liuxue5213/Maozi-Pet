@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { usePetStore, INTERACTION_LABELS } from '../../store/petStore';
+import { idleLineFor, profileOf } from '../../config/personalities';
 import { useInventoryStore } from '../../store/inventoryStore';
 import { apiFetch } from '../../config/env';
 import { SKIN_RING_COLORS, DEFAULT_SKIN_RING, equippedItemId } from '../../config/appearance';
@@ -102,7 +103,7 @@ function moodState(stats: { hunger: number; cleanliness: number; mood: number; e
   return null;
 }
 
-function PetAvatar({ stage, stats, equips, isSleeping }: { stage: string; stats: { hunger: number; cleanliness: number; mood: number; energy: number }; equips: EquippedItem[]; isSleeping: boolean }) {
+function PetAvatar({ stage, stats, equips, isSleeping, personality }: { stage: string; stats: { hunger: number; cleanliness: number; mood: number; energy: number }; equips: EquippedItem[]; isSleeping: boolean; personality: string }) {
   const scaleAnim = React.useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
@@ -152,6 +153,10 @@ function PetAvatar({ stage, stats, equips, isSleeping }: { stage: string; stats:
       {stage === 'egg' && <Text style={styles.stageHint}>点击孵化 ✨</Text>}
       {isSleeping && stage !== 'egg' && <Text style={styles.stageHint}>Zzz… 睡得正香</Text>}
       {state && <Text style={styles.stageHint}>{state.hint}</Text>}
+      {/* 性格外显：状态良好时宠物用自己的口吻闲聊（按天轮换，QQ宠物式人格一致性） */}
+      {!state && !isSleeping && stage !== 'egg' && (
+        <Text style={styles.stageHint}>{idleLineFor(personality)}</Text>
+      )}
     </Animated.View>
   );
 }
@@ -640,12 +645,17 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* 宠物名称 + 阶段标签 */}
+      {/* 宠物名称 + 阶段标签 + 性格标签 */}
       <View style={styles.header}>
         <Text style={styles.petName}>{pet.name}</Text>
         <View style={styles.stageTag}>
           <Text style={styles.stageTagText}>
             {pet.stage === 'egg' ? '宠物蛋' : pet.stage === 'child' ? '幼体' : pet.stage === 'teen' ? '少年' : '成年'} Lv.{pet.level}
+          </Text>
+        </View>
+        <View style={styles.personalityTag}>
+          <Text style={styles.personalityTagText}>
+            {profileOf(pet.personality).emoji} {profileOf(pet.personality).label}
           </Text>
         </View>
       </View>
@@ -658,7 +668,7 @@ export default function HomeScreen() {
       )}
 
       {/* 宠物展示区 */}
-      <PetAvatar stage={pet.stage} stats={pet.stats} equips={equips} isSleeping={isSleeping} />
+      <PetAvatar stage={pet.stage} stats={pet.stats} equips={equips} isSleeping={isSleeping} personality={pet.personality} />
 
       {/* 家园家具（背包-家园里摆放的，在宠物脚下展示） */}
       {placedFurniture.length > 0 && (
@@ -877,6 +887,8 @@ const styles = StyleSheet.create({
   petName: { fontSize: 28, fontWeight: '700', color: '#5A4A4A' },
   stageTag: { backgroundColor: '#FECA57', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   stageTagText: { fontSize: 12, fontWeight: '600', color: '#FFF' },
+  personalityTag: { backgroundColor: '#FFE8D2', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  personalityTagText: { fontSize: 12, fontWeight: '600', color: '#B07840' },
   eventBanner: {
     backgroundColor: '#FFF9E6',
     borderColor: '#FECA57',

@@ -20,6 +20,7 @@ import {
   pendingMilestone, nextMilestone, parseAwarded, serializeAwarded, MilestoneDef,
 } from '../utils/habits';
 import { applyExp } from '../utils/growth';
+import { normalizePersonality, habitCheer } from '../utils/personality';
 
 export const habitsRouter = Router();
 
@@ -106,6 +107,7 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
   let petMoodApplied = false;
   let petSleeping = false;
   let petName = '';
+  let petPersonality = '';
   let streak = 0;
   let freezesLeft = Math.max(0, Math.min(MAX_FREEZES, habit.freezes));
   let frozenDaysUsed = 0;
@@ -129,9 +131,10 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
         tx.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(coinReward, userId);
       }
 
-      const pet = tx.prepare('SELECT id, name, is_sleeping, stats_mood, level, exp, stage FROM pets WHERE user_id = ? AND is_retired = 0 ORDER BY created_at DESC LIMIT 1').get(userId) as any;
+      const pet = tx.prepare('SELECT id, name, personality, is_sleeping, stats_mood, level, exp, stage FROM pets WHERE user_id = ? AND is_retired = 0 ORDER BY created_at DESC LIMIT 1').get(userId) as any;
       if (pet) {
         petName = pet.name;
+        petPersonality = pet.personality;
         if (pet.is_sleeping) {
           petSleeping = true;
         } else {
@@ -188,6 +191,8 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
   if (coinReward > 0) message += ` 🪙+${coinReward}`;
   if (petMoodApplied) message += ` ${petName} 心情+${CHECK_MOOD}`;
   else if (petSleeping) message += `（${petName} 睡得正香 😴 心情奖励明天继续）`;
+  // 性格外显：醒着时宠物用自己性格的口吻鼓励主人（睡觉走 Zzz 语义不插话）
+  if (petName && !petSleeping) message += ` ${petName}${habitCheer(normalizePersonality(petPersonality))}`;
   if (frozenDaysUsed > 0) message += ` 🧊 冻结券帮你把漏打的${frozenDaysUsed}天补上了，连续记录保住啦`;
   if (milestoneAwarded) {
     message += ` 🎉 ${milestoneAwarded.icon} ${milestoneAwarded.title}达成！${milestoneAwarded.petName} 经验+${milestoneAwarded.exp}`;

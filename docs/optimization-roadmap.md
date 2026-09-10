@@ -2,7 +2,19 @@
 
 > Run 日志（最新在上）
 
-## Run @2026-09-10 08:00-08:55（第 6 轮：R23 习惯 streak 冻结券）
+## Run @2026-09-10 08:15-08:40（第 7 轮：R24 宠物性格外显强化）
+- **Review 发现**：R22 onboarding 承诺「每天来签到领金币」→ 走查确认签到功能真实存在（shop.ts 连续签到 7 天循环 10→100 金币 + 商城 Tab 接线），承诺属实无需修复
+- **竞品依据**：QQ宠物 AI 版四型灵魂人格（05:05 扫描已录）——我们的 5 型性格此前只在 RPS 台词/海报语录/AI prompt 里起作用，人格一致性外显弱
+- **完成 R24：性格外显强化（3 个外显面）**
+  · 后端 `utils/personality.ts`（新）：`normalizePersonality`（脏数据回落 cute）+ `habitCheer`（打卡鼓励语按 5 型性格分型、按 day-of-year 轮换、同日稳定可单测）
+  · `routes/habits.ts`：打卡成功文案追加宠物性格口吻鼓励语（`毛球「又平稳地度过一天，真好。」`）；**睡觉中不插话**（沿用「睡得正香」Zzz 语义）
+  · 前端 `config/personalities.ts`（新）：性格档案唯一数据源（emoji/label/desc/idleLines），onboarding 改为导入复用（消灭双份定义）
+  · 首页 index.tsx：① 状态良好时宠物用自己的口吻闲聊（按天轮换，原来只有低状态提示语）② 宠物名旁新增性格标签 chip（🧸 软萌治愈）
+- 测试：+5 单测 → **118 全绿**；双端 typecheck + Web 构建 exit=0
+- 冒烟：tsundere 打卡「才不是为你高兴，只是惯例感叹一下」/calm「又平稳地度过一天，真好。」/睡觉中打卡无鼓励语且 petMoodApplied=False ✓
+- 排障：冒烟脚本两坑重演——`UID` 是 zsh 只读变量（路线图已录）+ **token ≠ users.id**（此前 CLI 回填全靠 habit_id 撞对；pets.is_sleeping 的 CLI 直改必须先从 auth_tokens 反查真实 user_id），首轮「睡觉守卫失效」是冒烟脚本假警报而非产品 bug
+
+## Run @2026-09-10 08:05-08:25（第 6 轮：R23 习惯 streak 冻结券）
 - **认领协调**：08:02 并行会话已交付 R22（README 刷新），本会话接棒 R23（R19 遗留立项的 Duolingo streak freeze 对标）
 - **竞品扫描**（已录入 competitor-analysis.md）：Duolingo 冻结券上限 2 张、漏打日自动生效（Digia UX 拆解称「防断第一道防线」）；streak repair 复活机制列后续候选；**No Freeze February 社区反噬**（部分用户嫌券让 streak 变便宜）→ 印证保护须克制
 - **完成 R23：习惯 streak 冻结券**
