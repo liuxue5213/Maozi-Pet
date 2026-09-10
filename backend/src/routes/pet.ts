@@ -529,6 +529,7 @@ petRouter.post('/:petId/rps', authMiddleware, (req: Request, res: Response) => {
   if (coinReward > 0) message += ` 🪙+${coinReward}`;
 
   bumpTaskProgress(userId, 'interact3');
+  bumpTaskProgress(userId, 'rps3');
 
   const userCoins = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any)?.coins || 0;
 

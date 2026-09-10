@@ -9,6 +9,7 @@ import db, { transaction } from '../db';
 import { authMiddleware, getCurrentUserId } from '../middleware/auth';
 import { todayStr } from '../utils/today';
 import { calcStreakWithFreeze, parseDayList } from '../utils/habits';
+import { bumpTaskProgress } from '../utils/tasks';
 
 export const socialRouter = Router();
 
@@ -600,6 +601,9 @@ socialRouter.post('/friends/:friendId/pets/:petId/interact', authMiddleware, (re
     SELECT stats_hunger, stats_mood FROM pets WHERE id = ?
   `).get(petId) as any;
   myCoins = (db.prepare('SELECT coins FROM users WHERE id = ?').get(userId) as any)?.coins ?? 0;
+
+  // 串门互动接入每日任务闭环（visit1：串门互动 1 次；重复互动被拦时不会走到这里）
+  bumpTaskProgress(userId, 'visit1');
 
   res.json({
     message: type === 'gift'

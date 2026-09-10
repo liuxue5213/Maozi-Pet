@@ -29,14 +29,17 @@ function taskState(taskId: string) {
   return getDailyTasks('u1', database).find(t => t.taskId === taskId)!;
 }
 
-test('任务定义共 3 个，日奖励上限 45', () => {
-  assert.equal(TASK_DEFS.length, 3);
-  assert.equal(TASK_DEFS.reduce((s, t) => s + t.reward, 0), 45);
+test('任务定义共 6 个，日奖励上限 75', () => {
+  assert.equal(TASK_DEFS.length, 6);
+  assert.equal(TASK_DEFS.reduce((s, t) => s + t.reward, 0), 75);
+  // 新任务（R25：现实/社交行为接入闭环）齐全
+  const ids = TASK_DEFS.map(t => t.taskId);
+  for (const id of ['habit1', 'rps3', 'visit1']) assert.ok(ids.includes(id), `缺少任务 ${id}`);
 });
 
 test('getDailyTasks 未有任何进度时返回全部未完成', () => {
   const tasks = getDailyTasks('u1', database);
-  assert.equal(tasks.length, 3);
+  assert.equal(tasks.length, 6);
   tasks.forEach(t => {
     assert.equal(t.progress, 0);
     assert.equal(t.done, false);
@@ -49,6 +52,15 @@ test('推进进度：feed1 一次即完成', () => {
   const t = taskState('feed1');
   assert.equal(t.progress, 1);
   assert.equal(t.done, true);
+});
+
+test('新任务推进：rps3 封顶 3、habit1/visit1 一次完成', () => {
+  for (let i = 0; i < 5; i++) bumpTaskProgress('u1', 'rps3', database);
+  assert.equal(taskState('rps3').progress, 3, 'rps3 超额推进封顶');
+  bumpTaskProgress('u1', 'habit1', database);
+  assert.equal(taskState('habit1').done, true);
+  bumpTaskProgress('u1', 'visit1', database);
+  assert.equal(taskState('visit1').done, true);
 });
 
 test('进度封顶：interact3 超额推进不超 target', () => {

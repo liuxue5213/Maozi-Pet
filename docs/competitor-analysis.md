@@ -1,5 +1,15 @@
 # 竞品分析（追加式日志）
 
+## 2026-09-10 08:45 扫描（日间周期：任务化习惯赛道）
+
+| 竞品/共识 | 核心做法 | 对本项目的启示（R25 已落地） |
+|------|---------|--------------|
+| **Habitica**（Google Play） | 习惯/待办直变 RPG 任务：完成得经验金币，角色升级；ADHD 社区常推荐 | 现实行为（习惯打卡）接入任务系统是对标核心——`habit1` 任务把 Finch 式习惯闭环与 Pou 式任务奖励焊在一起 |
+| **Finch Journeys/Quests**（Slate 2026-09 评测 / r/finch） | 温和游戏化：Goal Ideas→Journey→Quest 分层，每日任务轻量不焦虑 | 任务奖励保持微量（+10），文案延续无压力框架；不做 Habitica 式「失败扣血」惩罚 |
+| **Duolingo daily quest**（行业共识源头） | 每日任务=XP 目标+挑战，是习惯 App 任务化的原型 | `rps3`/`visit1` 把 App 内互动也纳入任务面，形成「现实行为+社交行为+ App 互动」三层日任务闭环 |
+
+来源：[Google Play-Habitica](https://play.google.com/store/apps/details?id=com.habitrpg.android.habitica)、[Slate-Finch 评测](https://slate.com/technology/2026/09/finch-app-self-care-wellness-review.html)、[r/finch-Quest 系统](https://www.reddit.com/r/finch/comments/1epa6hg/things_you_should_know_about_finch_app/)、[NerdSIP-习惯 App 对比](https://nerdsip.com/blog/best-apps-to-build-good-habits)、[habi.app-Finch 替代品](https://habi.app/insights/finch-alternatives/)
+
 ## 2026-09-10 08:40 扫描（日间周期 08 点轮：streak 冻结券机制细节）
 
 | 竞品/共识 | 核心做法 | 对本项目的启示（R23 已落地） |

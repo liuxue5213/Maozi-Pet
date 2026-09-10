@@ -21,6 +21,7 @@ import {
 } from '../utils/habits';
 import { applyExp } from '../utils/growth';
 import { normalizePersonality, habitCheer } from '../utils/personality';
+import { bumpTaskProgress } from '../utils/tasks';
 
 export const habitsRouter = Router();
 
@@ -184,6 +185,9 @@ habitsRouter.post('/:id/check', authMiddleware, (req: Request, res: Response) =>
     }
     throw err;
   }
+
+  // 现实习惯接入每日任务闭环（habit1：完成 1 次习惯打卡）
+  bumpTaskProgress(userId, 'habit1');
 
   // 无压力文案：streak=1 是重爬第一天，用「重新启程」而非「连续 1 天」的生硬表述
   const streakText = streak === 1 ? '🌱 重新启程第 1 天' : `🔥 连续 ${streak} 天`;

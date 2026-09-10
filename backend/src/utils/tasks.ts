@@ -18,6 +18,10 @@ export const TASK_DEFS: TaskDef[] = [
   { taskId: 'feed1', title: '喂食 1 次', target: 1, reward: 10 },
   { taskId: 'chat1', title: '和帽子聊 1 句', target: 1, reward: 15 },
   { taskId: 'interact3', title: '和帽子互动 3 次', target: 3, reward: 20 },
+  // 现实/社交行为接入任务闭环（Habitica「习惯即任务」/Finch Quests 对标，第一夜遗留 P2）
+  { taskId: 'habit1', title: '完成 1 次习惯打卡', target: 1, reward: 10 },
+  { taskId: 'rps3', title: '和帽子猜拳 3 局', target: 3, reward: 10 },
+  { taskId: 'visit1', title: '串门互动 1 次', target: 1, reward: 10 },
 ];
 
 const DEF_MAP = new Map(TASK_DEFS.map(t => [t.taskId, t]));

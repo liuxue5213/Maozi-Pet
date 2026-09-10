@@ -2,6 +2,16 @@
 
 > Run 日志（最新在上）
 
+## Run @2026-09-10 08:42-09:05（第 8 轮：R25 现实/社交行为接入每日任务）
+- **竞品扫描**（已录入 competitor-analysis.md）：Habitica「习惯即任务」（习惯/日常直变 RPG 任务+经验）、Finch Journeys/Quests（Slate 2026-09 评测温和游戏化）、Duolingo daily quest 为该玩法源头——第一夜遗留 P2「猜拳/串门计入每日任务」由此清零
+- **完成 R25：每日任务 3 → 6 个**
+  · `TASK_DEFS` 新增：`habit1` 完成 1 次习惯打卡 +10 / `rps3` 猜拳 3 局 +10 / `visit1` 串门互动 1 次 +10（日上限 45→75，仍是互动 200 预算外的微量激励）
+  · 三条路由挂钩：habits check（habit1）/ pet rps（rps3，与 interact3 并列）/ social visit interact（visit1，置于重复互动拦截之后，无效互动不推进）
+  · 前端零改动：任务卡片区从 `/tasks/daily` 动态渲染，新任务自动出现
+- 测试：tasks 单测更新（任务数 6/日上限 75 + 新任务推进/封顶用例）→ **119 全绿** + 后端 typecheck ✅
+- 冒烟：打卡→habit1 1/1 领取+10；猜拳 4 局→rps3 3/3 封顶领取；好友点赞→visit1 1/1 领取；重复领取被拒 ✅
+- 排障：冒烟脚本三个假警报——① token 是 JWT ≠ users.id（加好友要传 auth_tokens 反查的真实 id）② GET /pet 返回 `{pets:[...]}` 复数 ③ 猜拳触发 checkGrowth 把 Lv1 宠物 stage 重算回蛋、后续对局被蛋守卫拒绝（既有规则非 bug）——提等级到 Lv3/child 后全过
+
 ## Run @2026-09-10 08:15-08:40（第 7 轮：R24 宠物性格外显强化）
 - **Review 发现**：R22 onboarding 承诺「每天来签到领金币」→ 走查确认签到功能真实存在（shop.ts 连续签到 7 天循环 10→100 金币 + 商城 Tab 接线），承诺属实无需修复
 - **竞品依据**：QQ宠物 AI 版四型灵魂人格（05:05 扫描已录）——我们的 5 型性格此前只在 RPS 台词/海报语录/AI prompt 里起作用，人格一致性外显弱
