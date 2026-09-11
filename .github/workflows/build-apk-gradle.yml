@@ -13,7 +13,7 @@
 # 产物：
 #   Actions 运行页面 → Artifacts → app-debug.apk（保留 30 天）
 #
-# 注意：默认 API 地址 http://10.0.2.2:60235/api 仅适用于模拟器访问宿主机；
+# 注意：默认 API 地址已设为线上服务器（真机直连可用）；如需模拟器包手动触发时填 http://10.0.2.2:60235/api；
 #       真机安装请手动触发并填入真实服务器地址（如 http://你的IP:60235/api）。
 # ============================================================
 
@@ -25,7 +25,7 @@ on:
       api_base_url:
         description: 'APK 内置的后端 API 地址'
         required: false
-        default: 'http://10.0.2.2:60235/api'
+        default: 'http://120.48.13.152:60235/api'
   push:
     tags:
       - 'v*'
@@ -41,7 +41,7 @@ jobs:
 
     # API 地址：手动触发用输入值；标签触发退回模拟器默认值
     env:
-      EXPO_PUBLIC_API_BASE_URL: ${{ inputs.api_base_url || 'http://10.0.2.2:60235/api' }}
+      EXPO_PUBLIC_API_BASE_URL: ${{ inputs.api_base_url || 'http://120.48.13.152:60235/api' }}
 
     steps:
       - name: 📥 检出代码
